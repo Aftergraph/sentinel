@@ -1,6 +1,6 @@
 # SentinelBench report — pack `1.6.0`
 
-- cases: 19
+- cases: 20
 - recall: 1
 - precision: 1
 - false positives per case: 0
@@ -21,6 +21,7 @@
 | reliability-health-check | yes | yes | require-health-check-before-traffic-shift | require-health-check-before-traffic-shift |
 | reliability-lockfile | yes | yes | require-lockfile-update-with-manifest-change | require-lockfile-update-with-manifest-change |
 | reliability-process-exit | yes | yes | no-process-exit-in-server-code | no-process-exit-in-server-code |
+| reliability-recreate-single-replica | yes | yes | no-recreate-single-replica-deployment, require-health-check-before-traffic-shift | no-recreate-single-replica-deployment, require-health-check-before-traffic-shift |
 | reliability-retry-backoff | yes | yes | require-retry-with-backoff-for-transient-failures | require-retry-with-backoff-for-transient-failures |
 | security-eval | yes | yes | no-eval-with-dynamic-input | no-eval-with-dynamic-input |
 | security-private-key | yes | yes | no-private-key-in-diff | no-private-key-in-diff |

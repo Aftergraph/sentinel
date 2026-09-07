@@ -59,8 +59,8 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 456 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
-1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24 per `lib/rulepack.js`).
+Full suite: `npm test` — 461 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24, 1.6.0 = 25 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
 `docs/mcp.md`), policy-gated review (`review --policy`, `docs/policy.md`),

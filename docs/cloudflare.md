@@ -13,7 +13,7 @@ remote MCP) once accounts and auth exist.
 Cloudflare edge (DNS, TLS, Tunnel ingress)
   │  cloudflared → VDS
   ├─ apps/github  :8787  (webhook receiver, needs GITHUB_* secrets)
-  ├─ console      :8788  (spec approved, not built)
+  ├─ console      :8788  (ships local: console/server.js, smoke PASS; tunnel target open)
   └─ mcp-remote   later  (McpAgent, Streamable HTTP — phase 2)
 ```
 

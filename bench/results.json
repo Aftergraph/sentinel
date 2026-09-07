@@ -176,6 +176,21 @@
       "missing": []
     },
     {
+      "case": "reliability-recreate-single-replica",
+      "fired": [
+        "no-recreate-single-replica-deployment",
+        "require-health-check-before-traffic-shift"
+      ],
+      "expected": [
+        "no-recreate-single-replica-deployment",
+        "require-health-check-before-traffic-shift"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
       "case": "reliability-retry-backoff",
       "fired": [
         "require-retry-with-backoff-for-transient-failures"
@@ -245,7 +260,7 @@
     "recall": 1,
     "precision": 1,
     "fpPerCase": 0,
-    "cases": 19,
+    "cases": 20,
     "rulesFired": {
       "require-strict-equality": 1,
       "no-destructive-migration-without-backup-verification": 1,
@@ -256,9 +271,10 @@
       "no-unauthenticated-api-endpoints": 2,
       "no-unbounded-list-query-without-pagination": 2,
       "no-n-plus-one-queries-in-api-resolvers": 1,
-      "require-health-check-before-traffic-shift": 1,
+      "require-health-check-before-traffic-shift": 2,
       "require-lockfile-update-with-manifest-change": 1,
       "no-process-exit-in-server-code": 1,
+      "no-recreate-single-replica-deployment": 1,
       "require-retry-with-backoff-for-transient-failures": 1,
       "no-eval-with-dynamic-input": 1,
       "no-private-key-in-diff": 1,

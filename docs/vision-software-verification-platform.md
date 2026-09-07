@@ -14,13 +14,13 @@ trust substrate underneath and the land-and-expand path upward.
 
 | # | Surface | What | Status |
 |---|---|---|---|
-| 1 | Review | PR verdicts with cited evidence | CLI ships (v0.1.0); GitHub App slice started |
-| 2 | Verify | sandbox/test/build evidence behind verdicts | CLI receipts exist; runners not started |
-| 3 | Security | secrets/deps/SAST/authN-Z/injection/crypto/exposure/config/IaC/supply-chain | 6 security rules ship; scanners delegated (gitleaks); TAINT analysis not started |
+| 1 | Review | PR verdicts with cited evidence | CLI ships (pack v1.6.0); GitHub App implementation + mocked tests, no production proof |
+| 2 | Verify | sandbox/test/build evidence behind verdicts | receipts+ledger ship; isolated local runner + evidence store ship (`lib/runner.js`, `lib/evidence-store.js`); hosted runners open |
+| 3 | Security | secrets/deps/SAST/authN-Z/injection/crypto/exposure/config/IaC/supply-chain | 25-rule pack (security/reliability/data/performance/correctness) + red-team hardening; taint analysis, CVE/deps intel open; scanners delegated (gitleaks) |
 | 4 | Context | repo + cross-repo system graph | not started |
 | 5 | Fix | propose→patch→test→re-verify loop | **BLOCKED on decisions.md #4** (no auto-fix/approve) — proposal-only until owner reversal |
 | 6 | Monitor | post-merge re-evaluation (deps, advisories, new rules) | not started |
-| 7 | Control | dashboards: home, repo, org; policies; audit log | console spec approved, not built |
+| 7 | Control | dashboards: home, repo, org; policies; audit log | local console + PWA ships (`console/`, smoke PASS); hosted dashboard open |
 | 8 | Intelligence | blast-radius/change graphs, incident tracing, product memory (FACT/POLICY/PREFERENCE/INFERENCE split) | not started |
 
 One product, not eight sidebars: every surface reads the same
