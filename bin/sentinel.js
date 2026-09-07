@@ -53,6 +53,38 @@ function cliResolveRepo(explicit) {
   return m[1];
 }
 
+// --- Additive: verdict-override flags (--override/--override-reason/--override-actor) ---
+//
+// Returns null when --override is absent; otherwise validates fail-closed
+// (exit 2, nothing on stdout) and fills the actor default (explicit
+// --override-actor wins, else `whoami`, else USER/USERNAME env).
+function cliDefaultActor() {
+  try {
+    const who = execSync('whoami', { encoding: 'utf8' }).trim();
+    if (who) return who;
+  } catch { /* fall through to env */ }
+  return process.env.USER || process.env.USERNAME || 'unknown';
+}
+
+function cliOverrideFromFlags(vals) {
+  const verdict = vals.override;
+  if (verdict == null || verdict === '') return null;
+  if (verdict !== 'SHIP' && verdict !== 'DO_NOT_SHIP') {
+    console.error(`Error: --override must be SHIP or DO_NOT_SHIP (got "${verdict}")`);
+    process.exit(2);
+  }
+  const reason = vals['override-reason'];
+  if (reason == null || String(reason).trim() === '') {
+    console.error('Error: --override requires --override-reason');
+    process.exit(2);
+  }
+  const explicitActor = vals['override-actor'];
+  const actor = explicitActor != null && String(explicitActor).trim() !== ''
+    ? String(explicitActor)
+    : cliDefaultActor();
+  return { verdict, actor, reason: String(reason) };
+}
+
 // review --policy <file>: same pipeline as review(), except the verdict is
 // gated by the versioned policy file scoped to the reviewed repo
 // (meta.policy = { policies, repo, checks: {} }). A missing/unparseable
@@ -63,6 +95,7 @@ async function reviewWithPolicy({
   pr, repo: explicitRepo, format = 'human', memoryPath,
   rulePackVersion, source, ledgerPath, noLedger = false, configPath,
   diffInput, headSha: explicitHeadSha, baseSha: explicitBaseSha, policyPath,
+  override,
 }) {
   const localMode = diffInput != null && diffInput !== '';
   if (!pr && !localMode) {
@@ -191,9 +224,16 @@ async function reviewWithPolicy({
       baseSha: baseShaStart,
       rulePackVersion: pack,
       policy: { policies: [policy], repo, checks: {} },
+      // Additive: verdict override (absent unless --override was passed).
+      ...(override != null ? { override } : {}),
     }, excluded);
   } catch (err) {
-    console.error(`Error: policy evaluation failed: ${err.message}`);
+    // Additive: an override rejection fails closed distinctly from policy errors.
+    if (override != null && /override/i.test(err.message)) {
+      console.error(`Error: override rejected: ${err.message}`);
+    } else {
+      console.error(`Error: policy evaluation failed: ${err.message}`);
+    }
     process.exit(2);
   }
 
@@ -220,6 +260,11 @@ async function reviewWithPolicy({
     } else if (format === 'json') {
       const out = reviewToJson(res, { repo, prNumber: pr, ...extra });
       out.policyEvaluation = res.policyEvaluation;
+      // Additive: verdict-override surface (present only when overridden).
+      if (res.overridden) {
+        out.overridden = res.overridden;
+        out.overriddenFrom = res.overriddenFrom;
+      }
       console.log(JSON.stringify(out, null, 2));
     } else if (format === 'gov') {
       console.log(JSON.stringify(reviewToGov(res, {
@@ -339,10 +384,11 @@ function printHelp() {
 Usage:
   sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov] [--rule-pack ${SUPPORTED_PACKS.join('|')}] [--source ${SOURCE_ENUM.join('|')}] [--ledger-path <path>] [--no-ledger] [--config <path>] [--memory-path <path>]
   sentinel review --diff <file|-> [--repo owner/name] [--pr <n>] [--head-sha <sha>] [--base-sha <sha>] [same flags as above]
-  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>]
+  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
   sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
+  sentinel review --diff <file|-> --repo a/b --override SHIP|DO_NOT_SHIP --override-reason <text> [--override-actor <name>]
   sentinel verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile> [--format human|json]
   sentinel --help
 
@@ -405,6 +451,7 @@ const { values, positionals } = parseArgs({
     'rule-pack': { type: 'string' },
     source: { type: 'string' },
     'ledger-path': { type: 'string' },
+    'evidence-store': { type: 'string' },
     'no-ledger': { type: 'boolean', default: false },
     config: { type: 'string' },
     receipt: { type: 'string' },
@@ -420,6 +467,9 @@ const { values, positionals } = parseArgs({
     reason: { type: 'string', default: 'manual' },
     'memory-path': { type: 'string' },
     policy: { type: 'string' },
+    override: { type: 'string' },
+    'override-reason': { type: 'string' },
+    'override-actor': { type: 'string' },
     finding: { type: 'string' },
     'repo-dir': { type: 'string' },
     commands: { type: 'string' },
@@ -454,6 +504,7 @@ try {
       headSha: values['head-sha'] || undefined,
       baseSha: values['base-sha'] || undefined,
       policyPath: values.policy,
+      override: cliOverrideFromFlags(values) || undefined,
     });
   } else if (cmd === 'review') {
     const localMode = values.diff != null && values.diff !== '';
@@ -486,6 +537,7 @@ try {
       diffInput: localMode ? values.diff : undefined,
       headSha: values['head-sha'] || undefined,
       baseSha: values['base-sha'] || undefined,
+      override: cliOverrideFromFlags(values) || undefined,
     });
   } else if (cmd === 'serve') {
     const host = values.host || '127.0.0.1';
@@ -504,6 +556,7 @@ try {
       platform: ghToken ? createPlatform({ token: ghToken }) : undefined,
       topologyPath: values.topology || undefined,
       orgStatePath: values['org-state'] || undefined,
+      evidenceStorePath: values['evidence-store'] || undefined,
     });
     const port = parseInt(values.port || '8787', 10);
     listenConsole(handler, { port, host });

@@ -11,6 +11,9 @@
 
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { createOrgStore } from '../lib/org-store.js';
+import { createEvidenceStore } from '../lib/evidence-store.js';
 import { analyzeDiff, localHeadSha } from '../lib/review.js';
 import { RULE_PACK_VERSION, SUPPORTED_PACKS, SEVERITY_MAP, BLOCKING_SEVERITIES, ruleIdsForPack } from '../lib/rulepack.js';
 import { verifyReceipt, loadLedger, latestForRepoPr, defaultLedgerPath } from '../lib/receipt.js';
@@ -127,6 +130,52 @@ export const TOOLS = [
       required: ['policyText'],
     },
   },
+  {
+    name: 'sentinel_orgs_list',
+    description: 'List organizations in an org store file (read-only; missing/corrupt file returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        storePath: { type: 'string', description: 'Path to the org store JSON file (required).' },
+      },
+      required: ['storePath'],
+    },
+  },
+  {
+    name: 'sentinel_org_repos',
+    description: 'List repos linked to an org in an org store file (read-only; unknown org returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        storePath: { type: 'string', description: 'Path to the org store JSON file (required).' },
+        orgId: { type: 'string', description: 'Organization id to list repos for.' },
+      },
+      required: ['storePath', 'orgId'],
+    },
+  },
+  {
+    name: 'sentinel_evidence_get',
+    description: 'Fetch one sealed evidence item by id with hash revalidation (read-only; tampered or unknown id returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        storePath: { type: 'string', description: 'Path to the evidence store JSON file (required).' },
+        id: { type: 'string', description: 'Evidence item id (content hash) to fetch.' },
+      },
+      required: ['storePath', 'id'],
+    },
+  },
+  {
+    name: 'sentinel_evidence_verify',
+    description: 'Revalidate every stored evidence hash and report a verifyAll summary (read-only; corrupt file returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        storePath: { type: 'string', description: 'Path to the evidence store JSON file (required).' },
+      },
+      required: ['storePath'],
+    },
+  },
 ];
 
 function text(obj) {
@@ -135,6 +184,21 @@ function text(obj) {
 
 function toolError(message) {
   return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
+}
+
+// isError carrier for the org/evidence read tools. Every result (success
+// or error) echoes storePath plus a count, so callers can correlate
+// responses without probing the filesystem.
+function storeError(message, storePath, extra = {}) {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: message, storePath: storePath ?? null, count: 0, ...extra }) }],
+    isError: true,
+  };
+}
+
+function requiredStorePath(args) {
+  if (!args || typeof args.storePath !== 'string' || args.storePath.trim() === '') return null;
+  return args.storePath;
 }
 
 function fetchPrDiff(repo, pr) {
@@ -311,6 +375,113 @@ export async function dispatch(name, args = {}, ctx = {}) {
         }
       } catch (err) {
         return toolError(err.message);
+      }
+    }
+    case 'sentinel_orgs_list': {
+      // Read-only: listOrgs only. Missing storePath, missing file, or a
+      // corrupt file returns isError (never throws, never probes defaults).
+      try {
+        const storePath = requiredStorePath(args);
+        if (!storePath) {
+          return storeError('sentinel_orgs_list needs storePath as a non-empty string.', args?.storePath ?? null);
+        }
+        if (!existsSync(storePath)) {
+          return storeError(`sentinel_orgs_list: store file not found (${storePath}).`, storePath);
+        }
+        let store;
+        try {
+          store = createOrgStore(storePath);
+        } catch (err) {
+          return storeError(`sentinel_orgs_list: ${err.message}`, storePath);
+        }
+        const orgs = store.listOrgs().map((o) => ({ id: o.id, name: o.name }));
+        return text({ storePath, orgs, count: orgs.length });
+      } catch (err) {
+        return storeError(`sentinel_orgs_list: ${err.message}`, args?.storePath ?? null);
+      }
+    }
+    case 'sentinel_org_repos': {
+      // Read-only: getOrg + reposForOrg only. Unknown org returns isError.
+      try {
+        const storePath = requiredStorePath(args);
+        if (!storePath) {
+          return storeError('sentinel_org_repos needs storePath as a non-empty string.', args?.storePath ?? null);
+        }
+        const orgId = (args && typeof args.orgId === 'string' && args.orgId !== '') ? args.orgId : null;
+        if (!orgId) {
+          return storeError('sentinel_org_repos needs orgId as a non-empty string.', storePath, { orgId: args?.orgId ?? null });
+        }
+        if (!existsSync(storePath)) {
+          return storeError(`sentinel_org_repos: store file not found (${storePath}).`, storePath, { orgId });
+        }
+        let store;
+        try {
+          store = createOrgStore(storePath);
+        } catch (err) {
+          return storeError(`sentinel_org_repos: ${err.message}`, storePath, { orgId });
+        }
+        if (!store.getOrg(orgId)) {
+          return storeError(`sentinel_org_repos: unknown org (${orgId}).`, storePath, { orgId });
+        }
+        const repos = store.reposForOrg(orgId);
+        return text({ storePath, orgId, repos, count: repos.length });
+      } catch (err) {
+        return storeError(`sentinel_org_repos: ${err.message}`, args?.storePath ?? null);
+      }
+    }
+    case 'sentinel_evidence_get': {
+      // Read-only: get + verifyAll revalidation. A tampered entry returns
+      // isError naming the id; unknown ids do the same.
+      try {
+        const storePath = requiredStorePath(args);
+        if (!storePath) {
+          return storeError('sentinel_evidence_get needs storePath as a non-empty string.', args?.storePath ?? null);
+        }
+        const id = (args && typeof args.id === 'string' && args.id !== '') ? args.id : null;
+        if (!id) {
+          return storeError('sentinel_evidence_get needs id as a non-empty string.', storePath, { id: args?.id ?? null });
+        }
+        if (!existsSync(storePath)) {
+          return storeError(`sentinel_evidence_get: store file not found (${storePath}).`, storePath, { id });
+        }
+        let store;
+        try {
+          store = createEvidenceStore(storePath);
+        } catch (err) {
+          return storeError(`sentinel_evidence_get: ${err.message}`, storePath, { id });
+        }
+        const item = store.get(id);
+        if (!item) {
+          return storeError(`sentinel_evidence_get: unknown evidence id (${id}).`, storePath, { id });
+        }
+        if (store.verifyAll().bad.includes(id)) {
+          return storeError(`sentinel_evidence_get: tampered evidence (${id}): outputHash mismatch.`, storePath, { id });
+        }
+        return text({ storePath, id, item, valid: true, count: 1 });
+      } catch (err) {
+        return storeError(`sentinel_evidence_get: ${err.message}`, args?.storePath ?? null);
+      }
+    }
+    case 'sentinel_evidence_verify': {
+      // Read-only inventory: delegates to the store's verifyAll().
+      try {
+        const storePath = requiredStorePath(args);
+        if (!storePath) {
+          return storeError('sentinel_evidence_verify needs storePath as a non-empty string.', args?.storePath ?? null);
+        }
+        if (!existsSync(storePath)) {
+          return storeError(`sentinel_evidence_verify: store file not found (${storePath}).`, storePath);
+        }
+        let store;
+        try {
+          store = createEvidenceStore(storePath);
+        } catch (err) {
+          return storeError(`sentinel_evidence_verify: ${err.message}`, storePath);
+        }
+        const report = store.verifyAll();
+        return text({ storePath, ok: report.ok, checked: report.checked, bad: report.bad, count: report.checked });
+      } catch (err) {
+        return storeError(`sentinel_evidence_verify: ${err.message}`, args?.storePath ?? null);
       }
     }
     default:

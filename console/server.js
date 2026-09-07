@@ -37,6 +37,8 @@ import {
   ruleIdsForPack,
 } from '../lib/rulepack.js';
 import { createOrgStore } from '../lib/org-store.js';
+import { createEvidenceStore } from '../lib/evidence-store.js';
+import { sealEvidence } from '../lib/evidence.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -176,7 +178,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath } = opts;
   // v1b mode only when governance files are pointed at; otherwise the
   // v1a /api/repos shape is returned byte-identically (no headSource).
   const orgWide = Boolean(topologyPath || orgStatePath);
@@ -673,6 +675,72 @@ export function createConsoleServer(opts = {}) {
     return { repo, prNumber, headSha: latest.headSha, verdict: latest.verdict, stale, finding: match, evidence, history };
   }
 
+  // Sealed-evidence persistence (opt-in via evidenceStorePath — the
+  // store file holds sealed EvidenceItems per lib/evidence-store.js while
+  // the verifyRuns registry itself stays in-memory and is still lost on
+  // restart. Without evidenceStorePath every helper below is inert and
+  // the verify shapes are returned byte-identically. With it, starting a
+  // run seals one deterministic item per planned check (content-addressed
+  // by (runId, targetSha, check type), so replaying the same start on a
+  // fresh instance seals identical items) and persists them through the
+  // store's atomic write; run views list those items from the store with
+  // an in-memory fallback. The store file is re-opened per
+  // evidence-touching request so writes from other instances are visible.
+  // Any store failure (missing path, corrupt file, unwritable dir) fails
+  // closed with a fixed safe message — raw store errors, file paths and
+  // file contents never reach the response).
+  const evidenceStorePathSet = typeof evidenceStorePath === 'string' && evidenceStorePath.trim() !== '';
+
+  function loadEvidenceStore() {
+    try {
+      return createEvidenceStore(evidenceStorePath);
+    } catch {
+      throw new HttpError(500, 'evidence store unavailable');
+    }
+  }
+
+  function sealRunEvidence(run) {
+    return run.checks.map((c) => sealEvidence({
+      runId: run.id,
+      targetSha: run.targetSha,
+      type: c.type,
+      command: `verify:${c.type}`,
+      exitCode: null,
+      result: 'PENDING',
+      artifacts: [],
+    }));
+  }
+
+  function persistRunEvidence(items) {
+    const store = loadEvidenceStore();
+    try {
+      for (const item of items) store.put(item);
+    } catch {
+      throw new HttpError(500, 'evidence store unavailable');
+    }
+  }
+
+  // Evidence entries for a run view: stored items first (ids + hashes as
+  // persisted), falling back to the items sealed at start when the store
+  // holds nothing for this run (e.g. the store file was removed).
+  function runEvidenceEntries(run) {
+    const store = loadEvidenceStore();
+    let items;
+    try {
+      items = store.listByRun(run.id);
+    } catch {
+      throw new HttpError(500, 'evidence store unavailable');
+    }
+    const src = items.length > 0 ? items : (run.sealedEvidence || []);
+    return src.map((e) => ({
+      id: e.id,
+      hash: e.outputHash,
+      runId: e.runId,
+      type: e.type,
+      targetSha: e.targetSha,
+    }));
+  }
+
   // Verification runs (display only — an in-memory registry keyed by run
   // id, never persisted: entries live in this server process and are lost
   // on restart. Documented limit: at most MAX_VERIFY_RUNS runs are kept;
@@ -719,6 +787,14 @@ export function createConsoleServer(opts = {}) {
       checks: types.map((type) => ({ type, status: 'PENDING' })),
       evidenceIds: Array.isArray(match.evidenceRefs) ? [...match.evidenceRefs] : [],
     };
+    if (evidenceStorePathSet) {
+      // Fail closed before registering: a corrupt/unwritable store 500s
+      // and leaves no half-registered run behind.
+      const sealed = sealRunEvidence(run);
+      persistRunEvidence(sealed);
+      run.sealedEvidence = sealed;
+      for (const item of sealed) run.evidenceIds.push(item.id);
+    }
     verifyRuns.set(id, run);
     while (verifyRuns.size > MAX_VERIFY_RUNS) {
       verifyRuns.delete(verifyRuns.keys().next().value);
@@ -732,7 +808,7 @@ export function createConsoleServer(opts = {}) {
     const ledgerHead = entries.length > 0 ? entries[entries.length - 1].headSha : null;
     const stale = ledgerHead !== null && ledgerHead !== run.targetSha;
     const done = run.checks.filter((c) => c.status !== 'PENDING' && c.status !== 'RUNNING').length;
-    return {
+    const view = {
       id: run.id,
       findingRef: { ...run.findingRef },
       targetSha: run.targetSha,
@@ -744,6 +820,10 @@ export function createConsoleServer(opts = {}) {
       staleReason: stale ? `run targets ${run.targetSha} but ledger head is ${ledgerHead}` : null,
       ledgerHead,
     };
+    // Appended only when a store is configured, so the unconfigured shape
+    // stays byte-identical. Entries carry the persisted hashes.
+    if (evidenceStorePathSet) view.evidence = runEvidenceEntries(run);
+    return view;
   }
 
   function listRules() {
