@@ -1,0 +1,11 @@
+diff --git a/db/migrations/043_drop_legacy_email.sql b/db/migrations/043_drop_legacy_email.sql
+new file mode 100644
+index 0000000..5d6e7f8
+--- /dev/null
++++ b/db/migrations/043_drop_legacy_email.sql
+@@ -0,0 +1,6 @@
++-- Verified backup: pg_dump users table to s3://backups/users-2026-09-07.dump
++-- Restore drill completed 2026-09-06 (runbook RB-12)
++ALTER TABLE users DROP COLUMN legacy_email;
++-- Non-destructive change below
++CREATE TABLE audit_log_v2 (id BIGINT PRIMARY KEY, payload JSONB);
