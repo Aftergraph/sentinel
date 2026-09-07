@@ -28,7 +28,7 @@ import {
   detectSource,
 } from '../lib/receipt.js';
 import { load as loadMemory } from '../lib/memory.js';
-import { planChecks } from '../lib/verify.js';
+import { planChecks, completeRun } from '../lib/verify.js';
 import {
   RULE_PACK_VERSION,
   SUPPORTED_PACKS,
@@ -38,7 +38,8 @@ import {
 } from '../lib/rulepack.js';
 import { createOrgStore } from '../lib/org-store.js';
 import { createEvidenceStore } from '../lib/evidence-store.js';
-import { sealEvidence } from '../lib/evidence.js';
+import { sealEvidence, hashBody } from '../lib/evidence.js';
+import { createFinding } from '../lib/finding.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -934,6 +935,32 @@ export function createConsoleServer(opts = {}) {
       checks: types.map((type) => ({ type, status: 'PENDING' })),
       evidenceIds: Array.isArray(match.evidenceRefs) ? [...match.evidenceRefs] : [],
     };
+    // Seeded ledger finding for operator-driven completion: the console
+    // never executes checks itself (VibeSec), but completeRun() needs a
+    // finding object to transition + audit. Bound here at start so the
+    // complete step resolves the same finding. Internal only — never
+    // exposed in the run view.
+    try {
+      run.finding = createFinding({
+        ruleId: match.ruleId,
+        file: typeof match.file === 'string' && match.file ? match.file : 'unknown',
+        line,
+        evidence: typeof match.evidence === 'string' ? match.evidence : '',
+        targetSha: latest.headSha,
+        actor: 'human',
+      });
+    } catch {
+      run.finding = {
+        id: `${id}-finding`,
+        ruleId: match.ruleId,
+        file: typeof match.file === 'string' && match.file ? match.file : 'unknown',
+        line,
+        evidence: typeof match.evidence === 'string' ? match.evidence : '',
+        targetSha: latest.headSha,
+        verification_state: 'HYPOTHESIS',
+        evidenceRefs: [],
+      };
+    }
     if (evidenceStorePathSet) {
       // Fail closed before registering: a corrupt/unwritable store 500s
       // and leaves no half-registered run behind.
@@ -971,6 +998,189 @@ export function createConsoleServer(opts = {}) {
     // stays byte-identical. Entries carry the persisted hashes.
     if (evidenceStorePathSet) view.evidence = runEvidenceEntries(run);
     return view;
+  }
+
+  // Operator-driven run completion (NO server-side exec — VibeSec). The
+  // operator ran the planned checks out-of-band and asserts the results;
+  // the console only records them via lib/verify.js completeRun() (which
+  // transitions the seeded finding + appends audit). Results are labeled
+  // assertedBy: 'operator' (caller token identity) in the response.
+  //
+  // Body: { results: [{ type, status, exitCode? }], evidence?: [sealed] }.
+  // Mass-assignment guard: only results/evidence at top level and only
+  // type/status/exitCode per result entry — any unknown field 400s.
+  // Fail-closed: missing required check results 400 with nothing mutated;
+  // evidence seal/targetSha mismatches 400 with nothing mutated;
+  // already-terminal runs 409 (no double-complete); unknown runs 404.
+  function completeVerifyRun(id, body) {
+    const run = verifyRuns.get(id);
+    if (!run) throw new HttpError(404, 'no such verification run');
+    if (run.status === 'PASS' || run.status === 'FAIL') {
+      throw new HttpError(409, 'run already complete');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new HttpError(400, 'invalid JSON body');
+    }
+    for (const k of Object.keys(body)) {
+      if (k !== 'results' && k !== 'evidence') {
+        throw new HttpError(400, `unknown field "${k}"`);
+      }
+    }
+    if (!Array.isArray(body.results)) {
+      throw new HttpError(400, 'results must be an array');
+    }
+    const evidenceItems = body.evidence === undefined ? [] : body.evidence;
+    if (!Array.isArray(evidenceItems)) {
+      throw new HttpError(400, 'evidence must be an array');
+    }
+    const allowedResultKeys = new Set(['type', 'status', 'exitCode']);
+    for (const r of body.results) {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) {
+        throw new HttpError(400, 'results entries must be objects with type and status');
+      }
+      for (const k of Object.keys(r)) {
+        if (!allowedResultKeys.has(k)) {
+          throw new HttpError(400, `unknown field "${k}"`);
+        }
+      }
+      if (typeof r.type !== 'string' || r.type.trim() === '') {
+        throw new HttpError(400, 'result type is required');
+      }
+      if (typeof r.status !== 'string' || r.status.trim() === '') {
+        throw new HttpError(400, 'result status is required');
+      }
+      if ('exitCode' in r && r.exitCode !== null && r.exitCode !== undefined
+        && !Number.isInteger(r.exitCode)) {
+        throw new HttpError(400, 'exitCode must be an integer');
+      }
+      const key = String(r.status).trim().toUpperCase().replace(/[\s-]+/g, '_');
+      const known = ['PASS', 'PASSED', 'OK', 'SUCCESS', 'SUCCESSFUL',
+        'FAIL', 'FAILED', 'FAILURE', 'ERROR',
+        'REFUTE', 'REFUTED', 'REFUTES', 'NOT_REPRODUCED', 'NOTREPRODUCED', 'DISPROVED'];
+      if (!known.includes(key)) {
+        throw new HttpError(400, `unknown check outcome "${r.status}"`);
+      }
+    }
+    const required = run.checks.map((c) => c.type);
+    const seen = new Set(body.results.map((r) => r.type));
+    if (body.results.length !== seen.size) {
+      throw new HttpError(400, 'duplicate result for check type');
+    }
+    const missing = required.filter((t) => !seen.has(t));
+    if (missing.length > 0) {
+      throw new HttpError(400, `BLOCKED: missing result for required check(s): ${missing.join(', ')}`);
+    }
+    for (const t of seen) {
+      if (!required.includes(t)) {
+        throw new HttpError(400, `unknown check type "${t}"`);
+      }
+    }
+    // Re-validate every evidence item before mutating anything: seal
+    // check (id === outputHash === recomputed content hash) plus
+    // targetSha must equal the run targetSha.
+    for (const ev of evidenceItems) {
+      if (!ev || typeof ev !== 'object' || Array.isArray(ev)) {
+        throw new HttpError(400, 'evidence items must be sealed evidence objects');
+      }
+      if (typeof ev.id !== 'string' || ev.id === ''
+        || typeof ev.outputHash !== 'string' || ev.outputHash === '') {
+        throw new HttpError(400, 'invalid evidence seal');
+      }
+      if (ev.id !== ev.outputHash) {
+        throw new HttpError(400, 'invalid evidence seal');
+      }
+      let recomputed;
+      try {
+        recomputed = hashBody({
+          runId: ev.runId ?? null,
+          targetSha: ev.targetSha ?? null,
+          type: ev.type ?? null,
+          command: ev.command ?? null,
+          exitCode: ev.exitCode ?? null,
+          result: ev.result ?? null,
+          artifactRefs: Array.isArray(ev.artifactRefs) ? [...ev.artifactRefs] : ev.artifactRefs,
+        });
+      } catch {
+        throw new HttpError(400, 'invalid evidence seal');
+      }
+      if (recomputed !== ev.outputHash) {
+        throw new HttpError(400, 'invalid evidence seal');
+      }
+      if (ev.targetSha !== run.targetSha) {
+        throw new HttpError(400,
+          `INVALID_VERIFICATION: evidence targetSha (${ev.targetSha}) does not match run targetSha (${run.targetSha})`);
+      }
+    }
+    // Resolve the seeded finding (bound at start; reconstructed from the
+    // ledger when absent so older in-memory runs still complete).
+    let finding = run.finding;
+    if (!finding || typeof finding !== 'object' || !finding.id) {
+      const chain = noLedger ? [] : loadLedger(ledgerPath);
+      const entries = chain.filter((e) => e && e.repo === run.findingRef.repo
+        && String(e.prNumber) === String(run.findingRef.prNumber));
+      const latest = entries.length > 0 ? entries[entries.length - 1] : null;
+      const snap = latest && latest.findings && typeof latest.findings === 'object' ? latest.findings : {};
+      const match = [...(snap.blocking || []), ...(snap.nonBlocking || []), ...(snap.silenced || [])]
+        .find((f) => f && f.ruleId === run.findingRef.ruleId && Number(f.line) === Number(run.findingRef.line));
+      try {
+        finding = createFinding({
+          ruleId: run.findingRef.ruleId,
+          file: (match && typeof match.file === 'string' && match.file) || 'unknown',
+          line: run.findingRef.line,
+          evidence: (match && typeof match.evidence === 'string' && match.evidence) || '',
+          targetSha: run.targetSha,
+          actor: 'human',
+        });
+      } catch (err) {
+        throw new HttpError(400, err.message);
+      }
+      run.finding = finding;
+    }
+    const fromState = finding.verification_state || null;
+    // Persist operator evidence first (fail-closed before mutation when a
+    // store is configured). Items are re-frozen for the store's seal gate;
+    // content is unchanged so the recomputed hash still matches.
+    if (evidenceStorePathSet && evidenceItems.length > 0) {
+      const store = loadEvidenceStore();
+      try {
+        for (const ev of evidenceItems) {
+          const frozen = Object.freeze({
+            ...ev,
+            artifactRefs: Object.freeze(Array.isArray(ev.artifactRefs) ? [...ev.artifactRefs] : ev.artifactRefs),
+          });
+          store.put(frozen);
+        }
+      } catch {
+        throw new HttpError(500, 'evidence store unavailable');
+      }
+      if (!Array.isArray(run.sealedEvidence)) run.sealedEvidence = [];
+      for (const ev of evidenceItems) {
+        if (!run.sealedEvidence.some((e) => e && e.id === ev.id)) run.sealedEvidence.push(ev);
+      }
+    }
+    const libResults = body.results.map((r) => ({ type: r.type, status: r.status }));
+    try {
+      completeRun(finding, run, libResults, evidenceItems, { actor: 'human' });
+    } catch (err) {
+      if (err && (err.code === 'BLOCKED' || err.code === 'INVALID_VERIFICATION')) {
+        throw new HttpError(400, err.message);
+      }
+      if (err && /already complete|terminal/.test(err.message || '')) {
+        throw new HttpError(409, 'run already complete');
+      }
+      throw new HttpError(400, err && err.message ? String(err.message) : 'cannot complete run');
+    }
+    for (const ev of evidenceItems) {
+      if (!run.evidenceIds.includes(ev.id)) run.evidenceIds.push(ev.id);
+    }
+    const toState = finding.verification_state || null;
+    const view = verifyRunView(run);
+    return {
+      ...view,
+      finding: { id: finding.id, from: fromState, to: toState, verification_state: toState },
+      findingTransition: { from: fromState, to: toState },
+      assertedBy: 'operator',
+    };
   }
 
   function listRules() {
@@ -1134,6 +1344,17 @@ export function createConsoleServer(opts = {}) {
         const parsed = parseFindingPath(path);
         if (!parsed) throw new HttpError(400, 'missing repo, pr, rule or line');
         return send(200, buildFindingRecord(parsed.repo, parsed.prNumber, parsed.ruleId, parsed.line, url.searchParams.get('head')));
+      }
+      if (method === 'POST' && path.startsWith('/api/verify/') && path.endsWith('/complete')) {
+        let id;
+        try {
+          id = decodeURIComponent(path.slice('/api/verify/'.length, -'/complete'.length));
+        } catch {
+          throw new HttpError(400, 'malformed verify path');
+        }
+        if (id.endsWith('/')) id = id.slice(0, -1);
+        if (!id || id.includes('/')) return send(404, { error: 'not found' });
+        return send(200, completeVerifyRun(id, await readJson(req)));
       }
       if (method === 'GET' && path.startsWith('/api/verify/')) {
         let id;
