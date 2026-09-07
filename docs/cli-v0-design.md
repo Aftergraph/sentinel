@@ -31,24 +31,20 @@ DO NOT SHIP — 2 findings
 
 Exit 2 is distinct from findings by design: CI gates must treat STALE as re-run, never as failure.
 
-## 3. Rule-pack v0 (`sentinel-rules@1.0.0`, 10 rules)
+## 3. Rule-pack v0 (`sentinel-rules@1.0.0`, 6 rules)
 
-Selected from `prototype/rule-gap-list.md` for highest postmortem-cost × static-detectability. All [VERIFY]-marked rules excluded from v0 (decisions.md #8).
+Final pack per `prototype/precision-audit.md` (20 PRs, cut below ~80% precision). CUT from the original 10: no-hardcoded-secrets-in-source (delegated to gitleaks, §8), no-race-condition-in-state-mutation, enforce-idempotency-on-writes, no-bulk-write-without-batching (all with documented FPs; race/idempotency deferred to v1 with AST analysis).
 
 | # | Rule | Severity | Detects on |
 |---|---|---|---|
 | 1 | no-unauthenticated-api-endpoints | security | route table vs auth middleware (JS/TS) |
-| 2 | no-hardcoded-secrets-in-source | security | entropy + known-prefix scan on diff |
-| 3 | no-secrets-in-cicd-config | security | workflow files in diff |
-| 4 | no-race-condition-in-state-mutation | security | check-then-act patterns on shared state |
-| 5 | enforce-idempotency-on-writes | security | POST/mutation handlers without idempotency key |
-| 6 | require-transaction-rollback-on-failure | reliability | migration files without DOWN/rollback block |
-| 7 | no-unindexed-schema-migration-on-large-tables | data | migrations adding index/column without CONCURRENTLY |
-| 8 | no-bulk-write-without-batching | data | unbounded bulk insert/update loops |
-| 9 | no-n-plus-one-queries-in-api-resolvers | performance | resolvers querying inside result loops |
-| 10 | require-dataloader-or-eager-load-for-nested-fetches | performance | nested-fetch without batching (companion to 9) |
+| 2 | no-secrets-in-cicd-config | security | workflow files in diff |
+| 3 | require-transaction-rollback-on-failure | reliability | migration files without DOWN/rollback block |
+| 4 | no-unindexed-schema-migration-on-large-tables | data | migrations adding index/column without CONCURRENTLY |
+| 5 | no-n-plus-one-queries-in-api-resolvers | performance | resolvers querying inside result loops |
+| 6 | require-dataloader-or-eager-load-for-nested-fetches | performance | nested-fetch without batching (companion to 5) |
 
-Rules 7–10, 12–14, 18–20 of the gap list are v1 expansion. Rule-pack is versioned and org-owned; a verdict always names its pack version.
+Rule-pack is versioned and org-owned; a verdict always names its pack version. Implemented in `lib/rules/` as pure functions with positive+negative fixtures each (`test/fixtures/`, 12/12 green).
 
 ## 4. Resolution memory
 
