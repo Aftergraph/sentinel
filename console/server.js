@@ -558,6 +558,67 @@ export function createConsoleServer(opts = {}) {
     };
   }
 
+  // Finding-detail record (display only — one finding resolved by
+  // (repo, prNumber, ruleId, line) from the LATEST ledger receipt for
+  // that repo+pr; 404 when the latest receipt carries no such finding).
+  // history lists every receipt for this repo+pr whose snapshot touched
+  // the same ruleId+line, oldest first (spans heads by construction).
+  function parseFindingPath(path) {
+    const prefix = '/api/finding/';
+    if (!path.startsWith(prefix)) return null;
+    let parts;
+    try {
+      parts = path.slice(prefix.length).split('/').filter((s) => s.length > 0)
+        .map((s) => decodeURIComponent(s));
+    } catch {
+      throw new HttpError(400, 'malformed finding path');
+    }
+    if (parts.length < 4) throw new HttpError(400, 'missing repo, pr, rule or line');
+    const lineRaw = parts[parts.length - 1];
+    const ruleId = parts[parts.length - 2];
+    const prRaw = parts[parts.length - 3];
+    const repo = parts.slice(0, -3).join('/');
+    if (!repo || !prRaw || !ruleId || !lineRaw) throw new HttpError(400, 'missing repo, pr, rule or line');
+    if (!/^-?\d+$/.test(lineRaw)) throw new HttpError(400, 'line must be an integer');
+    const prNumber = /^-?\d+$/.test(prRaw) ? Number(prRaw) : prRaw;
+    return { repo, prNumber, ruleId, line: Number(lineRaw) };
+  }
+
+  function buildFindingRecord(repo, prNumber, ruleId, line, requestedHead) {
+    const chain = noLedger ? [] : loadLedger(ledgerPath);
+    const entries = chain.filter((e) => e && e.repo === repo && String(e.prNumber) === String(prNumber));
+    if (entries.length === 0) throw new HttpError(404, 'no record for this repo+pr');
+    const latest = entries[entries.length - 1];
+    const snap = (latest.findings && typeof latest.findings === 'object') ? latest.findings : {};
+    const all = [...(snap.blocking || []), ...(snap.nonBlocking || []), ...(snap.silenced || [])].map(enrichFinding);
+    const match = all.find((f) => f.ruleId === ruleId && Number(f.line) === Number(line));
+    if (!match) throw new HttpError(404, 'no such finding on the latest receipt');
+    // Sealed evidence attached to this finding only.
+    const evidence = [];
+    for (const id of match.evidenceRefs) {
+      evidence.push({ id, hash: id, ruleId: match.ruleId, file: match.file, line: match.line });
+    }
+    const history = [];
+    entries.forEach((e, i) => {
+      const esnap = (e.findings && typeof e.findings === 'object') ? e.findings : {};
+      const ef = [...(esnap.blocking || []), ...(esnap.nonBlocking || []), ...(esnap.silenced || [])];
+      if (ef.some((f) => f && f.ruleId === ruleId && Number(f.line) === Number(line))) {
+        history.push({
+          seq: i + 1,
+          receiptId: e.receipt_id,
+          headSha: e.headSha,
+          verdict: e.verdict,
+          timestamp: e.timestamp,
+          counts: e.counts || null,
+        });
+      }
+    });
+    const head = (requestedHead !== undefined && requestedHead !== null && requestedHead !== '')
+      ? String(requestedHead) : null;
+    const stale = head !== null && head !== latest.headSha;
+    return { repo, prNumber, headSha: latest.headSha, verdict: latest.verdict, stale, finding: match, evidence, history };
+  }
+
   function listRules() {
     const pack = activePack();
     return {
@@ -681,6 +742,11 @@ export function createConsoleServer(opts = {}) {
         const parsed = parsePrPath(path);
         if (!parsed) throw new HttpError(400, 'missing repo or pr');
         return send(200, buildPrRecord(parsed.repo, parsed.prNumber, url.searchParams.get('head')));
+      }
+      if (method === 'GET' && (path === '/api/finding' || path.startsWith('/api/finding/'))) {
+        const parsed = parseFindingPath(path);
+        if (!parsed) throw new HttpError(400, 'missing repo, pr, rule or line');
+        return send(200, buildFindingRecord(parsed.repo, parsed.prNumber, parsed.ruleId, parsed.line, url.searchParams.get('head')));
       }
       if (method === 'GET' && path === '/api/rules') {
         return send(200, listRules());

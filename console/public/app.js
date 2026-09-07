@@ -305,6 +305,83 @@ async function vPR(q) {
   } catch (e) { out.innerHTML = errBox(e.message, false); }
 }
 
+// Deterministic suggestion text per rule family. Always framed as a
+// suggestion, never an instruction — the reviewer decides.
+function suggestedFixFor(ruleId) {
+  const id = String(ruleId || '');
+  if (id.startsWith('require-')) {
+    return `Suggestion (not an instruction): satisfy ${id} by adding the required guard or construct near the flagged location, then re-run review to confirm.`;
+  }
+  if (id.startsWith('no-')) {
+    return `Suggestion (not an instruction): remove or replace the flagged construct for ${id} near the flagged location, then re-run review to confirm.`;
+  }
+  return `Suggestion (not an instruction): review the flagged location against rule ${id || 'unknown'} and re-run review to confirm.`;
+}
+
+function findingDetailHtml(d, blast) {
+  const f = d.finding;
+  const conf = typeof f.aiConfidence === 'number'
+    ? `◆ AI confidence ${esc(String(f.aiConfidence))} <span class="dim">(model estimate, not evidence)</span>`
+    : '◆ AI confidence n/a <span class="dim">(model estimate, not evidence)</span>';
+  const verified = f.verificationState === 'CONFIRMED'
+    ? '<span class="pill verified">● CONFIRMED</span>'
+    : `<span class="pill gray">? ${esc(f.verificationState || 'unknown')}</span>`;
+  const blastHtml = !blast ? '<p class="dim">Blast-radius data unavailable.</p>'
+    : blast.length === 0 ? '<p class="ok">◆ No other findings in this file.</p>'
+    : `<ul class="findings-list">` + blast.map((g) =>
+      `<li><a href="#/finding?repo=${encodeURIComponent(d.repo)}&pr=${encodeURIComponent(String(d.prNumber))}&rule=${encodeURIComponent(g.ruleId)}&line=${encodeURIComponent(String(g.line))}">${esc(g.ruleId)} <code>${esc(g.file)}:${esc(String(g.line))}</code></a> ` +
+      `<span class="sev" aria-label="severity ${esc(g.severity || 'unknown')}">${esc(SEV_ICON[g.severity] || '?')} ${esc(g.severity || 'unknown')}</span></li>`).join('') + '</ul>';
+  const evidenceHtml = (d.evidence && d.evidence.length > 0)
+    ? `<ul class="findings-list">` + d.evidence.map((e) =>
+      `<li><code>${esc(e.id)}</code><p class="dim">sha256 <code>${esc(e.hash)}</code></p></li>`).join('') + '</ul>'
+    : '<p class="dim">No sealed evidence attached yet.</p>';
+  const historyHtml = (d.history && d.history.length > 0)
+    ? `<ol class="queue">` + d.history.map((h) =>
+      `<li>${pill(h.verdict)} <code>${esc(short(h.headSha))}</code> <span class="dim">#${h.seq} · ${esc(h.timestamp || '')}</span><br><code>${esc((h.receiptId || '').slice(0, 12))}</code></li>`).join('') + '</ol>'
+    : '<p class="dim">No earlier receipts touched this finding.</p>';
+  return `<article aria-label="Finding detail ${esc(f.ruleId)} at ${esc(f.file)} line ${esc(String(f.line))}">` +
+    `<p><span class="sev" aria-label="severity ${esc(f.severity || 'unknown')}">${esc(SEV_ICON[f.severity] || '?')} ${esc(f.severity || 'unknown')}</span> ` +
+    `<strong>${esc(f.ruleId)}</strong> ${f.blocking ? '<span class="pill dns">● blocked</span>' : '<span class="pill gray">○ advisory</span>'}</p>` +
+    `<section aria-label="Why this fired"><h3>Why this fired</h3>` +
+    (f.evidence ? `<p>${esc(f.evidence)}</p>` : '<p class="dim">No evidence text recorded.</p>') +
+    `<p>Code location: <code>${esc(f.file)}:${esc(String(f.line ?? ''))}</code></p></section>` +
+    `<section class="finding-ai" aria-label="AI estimate"><h3>AI estimate</h3><p>${conf}</p></section>` +
+    `<section class="finding-verified" aria-label="Verified evidence"><h3>Verified evidence</h3><p>Verification: ${verified}</p>${evidenceHtml}</section>` +
+    `<section aria-label="Blast radius"><h3>Blast radius (${blast ? blast.length : '?'})</h3><p class="dim">Other findings in the same file.</p>${blastHtml}</section>` +
+    `<section aria-label="Suggested fix"><h3>Suggested fix</h3><p>${esc(suggestedFixFor(f.ruleId))}</p></section>` +
+    `<section aria-label="History"><h3>History (${(d.history || []).length})</h3>${historyHtml}</section>` +
+    `</article>`;
+}
+
+async function vFinding(q) {
+  const repo = q.get('repo') || '';
+  const pr = q.get('pr') || '';
+  const rule = q.get('rule') || '';
+  const line = q.get('line') || '';
+  el.innerHTML = `<h2>Finding detail</h2>
+    <div class="row"><div><label for="fr">Repository</label><input id="fr" placeholder="owner/name" value="${esc(repo)}" autocomplete="off"></div><div><label for="fp">PR</label><input id="fp" placeholder="pr" value="${esc(pr)}" inputmode="numeric"></div><div><label for="frule">Rule</label><input id="frule" placeholder="rule id" value="${esc(rule)}" autocomplete="off"></div><div><label for="fline">Line</label><input id="fline" placeholder="line" value="${esc(line)}" inputmode="numeric"></div><button id="go">Load</button></div><div id="out"></div>`;
+  focusContent();
+  document.getElementById('go').onclick = () => {
+    const parts = [`repo=${encodeURIComponent(document.getElementById('fr').value)}`, `pr=${encodeURIComponent(document.getElementById('fp').value)}`,
+      `rule=${encodeURIComponent(document.getElementById('frule').value)}`, `line=${encodeURIComponent(document.getElementById('fline').value)}`];
+    location.hash = `#/finding?${parts.join('&')}`;
+  };
+  if (!repo || !pr || !rule || !line) return;
+  const out = document.getElementById('out');
+  out.innerHTML = skeleton(4);
+  try {
+    const d = await api('GET', `/api/finding/${encodeURIComponent(repo)}/${encodeURIComponent(pr)}/${encodeURIComponent(rule)}/${encodeURIComponent(line)}`);
+    let blast = null;
+    try {
+      const p = await api('GET', `/api/pr/${encodeURIComponent(repo)}/${encodeURIComponent(pr)}`);
+      const all = [...(p.blocking || []), ...(p.nonBlocking || []), ...(p.silenced || [])];
+      blast = all.filter((g) => g.file === d.finding.file && !(g.ruleId === d.finding.ruleId && Number(g.line) === Number(d.finding.line)));
+    } catch { blast = null; }
+    out.innerHTML = findingDetailHtml(d, blast);
+    toast('Finding loaded');
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
 el.addEventListener('click', async (e) => {
   const retry = e.target.closest('button[data-retry]');
   if (retry) { route(); return; }
@@ -329,6 +406,7 @@ async function route() {
   if (path === '/config') return vConfig();
   if (path === '/ledger') return vLedger(q);
   if (path === '/pr') return vPR(q);
+  if (path === '/finding') return vFinding(q);
   return vBoard();
 }
 window.addEventListener('hashchange', route);

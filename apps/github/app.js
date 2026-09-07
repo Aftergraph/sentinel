@@ -8,8 +8,9 @@ import { verifySignature } from './verify.js';
 import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
+import { postCheck } from './checks.js';
 
-export { selectRepo, ingestPR, captureHead };
+export { selectRepo, ingestPR, captureHead, postCheck };
 import {
   analyzeDiff, checkFreshness, computeDelta, loadConfig, environmentInfo,
 } from '../../lib/review.js';
@@ -110,12 +111,34 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
 
   const comments = await platform.listComments(repo, pr);
   const own = findOwnComment(comments);
+  let action;
   if (own) {
     await platform.patchComment(repo, own.id, card);
-    return { handled: true, action: 'updated', verdict, receipt: receipt.receipt_id };
+    action = 'updated';
+  } else {
+    await platform.postComment(repo, pr, card);
+    action = 'created';
   }
-  await platform.postComment(repo, pr, card);
-  return { handled: true, action: 'created', verdict, receipt: receipt.receipt_id };
+  // Additive check-runs transport: only when a client is injected (existing
+  // callers without one see the exact prior return shape). Fail-closed like
+  // the rest of the slice — a checks error propagates to the 500 path.
+  const checksApi = opts.checksApi || opts.checkApi;
+  if (!checksApi) {
+    return { handled: true, action, verdict, receipt: receipt.receipt_id };
+  }
+  const check = await postCheck(
+    {
+      api: checksApi,
+      repo,
+      prNumber: pr,
+      headSha,
+      verdict,
+      summary,
+      findings: fresh.fresh ? result.blocking : [],
+    },
+    { storePath: opts.storePath, checksPath: opts.checksPath },
+  );
+  return { handled: true, action, verdict, receipt: receipt.receipt_id, check };
 }
 
 function readBody(req) {

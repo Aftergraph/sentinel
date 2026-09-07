@@ -116,6 +116,15 @@ ol.queue, ul.queue { list-style: none; margin: 8px 0; padding: 0; }
 .pill.verified { background: #052e22; color: var(--green); }
 .stale-banner { color: var(--orange); border: 1px solid var(--orange);
   border-radius: var(--radius); padding: 10px 12px; }
+/* Finding detail: brand law — AI estimate is purple, verified evidence is
+   green; the two panels never share a color (see app.js findingDetailHtml).
+   Both are static panels: no motion, so the global prefers-reduced-motion
+   block above covers this view. Headings + labels carry meaning, never
+   color alone. */
+.finding-ai { color: var(--purple); border: 1px solid var(--purple);
+  border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
+.finding-verified { color: var(--green); border: 1px solid var(--green);
+  border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
 ul.findings-list { list-style: none; margin: 8px 0; padding: 0; }
 .findings-list > li { background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
