@@ -1,0 +1,12 @@
+diff --git a/server/graphql/resolvers.mjs b/server/graphql/resolvers.mjs
+index 1111111..2222222 100644
+--- a/server/graphql/resolvers.mjs
++++ b/server/graphql/resolvers.mjs
+@@ -1,3 +1,8 @@
++import DataLoader from 'dataloader';
++const postLoader = new DataLoader(async (ids) => db.posts.findAll({ where: { authorId: ids } }));
++const resolvers = {
++  User: {
++    posts: (parent) => postLoader.load(parent.id)
++  }
++};

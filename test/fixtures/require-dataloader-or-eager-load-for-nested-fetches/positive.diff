@@ -1,0 +1,10 @@
+diff --git a/server/graphql/resolvers.mjs b/server/graphql/resolvers.mjs
+index 1111111..2222222 100644
+--- a/server/graphql/resolvers.mjs
++++ b/server/graphql/resolvers.mjs
+@@ -1,3 +1,7 @@
++const resolvers = {
++  User: {
++    posts: (parent) => db.posts.findAll({ where: { authorId: parent.id } })
++  }
++};
