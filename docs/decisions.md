@@ -12,3 +12,4 @@
 | 6 | Interviews/pilot optional later, not next | Prototype-first; validation via desk research + 5-PR prototype runs | Jonas only |
 | 7 | Docs before code; no scaffolding in this repo | Strategy must survive contact with prototype results before LOC | Jonas only |
 | 8 | Vendor-doc claims marked [VERIFY], unpublished until confirmed | One caught fabrication discounts the whole comparison | No (process rule, permanent) |
+| 9 | v0 verdict path fully deterministic, no LLM as judge | "Verified" and probabilistic output cannot share a sentence; LLM allowed in v1 as explanation layer only | Yes (product contract) |
