@@ -34,6 +34,10 @@ across repos (board view).
 
 - `sentinel serve [--port 8787] [--host 127.0.0.1]`: single Node process,
   zero dependencies, no build step. Serves static UI + same-origin `/api`.
+- Store flags: `--evidence-store <path>` (sealed-evidence persistence for
+  verify runs, `docs/pipeline.md`) and `--org-store <path>` (org scoping
+  for `/api/orgs*` + `?org=`, §4). Both flags appear on the
+  `bin/sentinel.js --help` `serve` usage line.
 - Bind rule: non-loopback `--host` requires `SENTINEL_CONSOLE_TOKEN`
   (Bearer on `/api/*`); loopback needs no token. Fail closed otherwise.
 - PWA: `manifest.json` + service worker caching the app shell only
@@ -57,15 +61,24 @@ across repos (board view).
 | `GET /api/overview` (`?org=` with store) | — | `{confidence, open, blocked, stale, critical, needsAttention, recentVerdicts}` (display roll-up over ledger + topology rows) | — |
 | `GET /api/pr/:repo/:pr` (`?head=`) | path | PR-detail record: verdict, blocking/nonBlocking/silenced (severity/blocking recomputed from `lib/rulepack`), counts, receipt, sealed-evidence refs, receipt-chain activity; `stale` is pure head-drift vs `?head=` | 400 malformed path, 404 no record |
 | `GET /api/finding/:repo/:pr/:rule/:line` (`?head=`) | path | finding detail (latest receipt) + per-receipt history for that rule+line | 400 malformed path/line, 404 no record or no such finding |
-| `POST /api/verify/start` | `{repo, prNumber\|pr, ruleId, line}` | planned run (`VR-0001…`, `PENDING`, checks via `planChecks`); runs never advance server-side, registry kept unbounded in-process and lost on restart (no eviction). With `--evidence-store` the start also seals + persists one evidence item per check and the view gains `evidence`. See `docs/pipeline.md` | 400 bad input, 404 unknown repo+PR/finding; 500 `evidence store unavailable` when a store is configured but corrupt |
+| `POST /api/verify/start` | `{repo, prNumber\|pr, ruleId, line}` | planned run (`VR-0001…`, `PENDING`, checks via `planChecks`); runs never advance server-side, at most 500 runs kept (oldest evicted) and state lost on restart. With `--evidence-store` the start also seals + persists one evidence item per check and the view gains `evidence`. See `docs/pipeline.md` | 400 bad input, 404 unknown repo+PR/finding; 500 `evidence store unavailable` when a store is configured but corrupt |
 | `GET /api/verify/:id` | path | run view: checks, `progress.done/total`, `evidenceIds`, ledger-head `stale`/`staleReason` (+ `evidence[]` with a store configured) | 404 no such run; 500 `evidence store unavailable` when a store is configured but corrupt |
-| `GET /api/orgs`, `GET /api/orgs/:id/repos` | — | org list / linked-repo rows enriched like `/api/repos` (display only, never mutated) | 404 without programmatic `orgStorePath` (incl. plain `sentinel serve` — no `--org-store` CLI flag exists); 400 malformed / 404 unknown org id |
+| `GET /api/health/verdicts` (`?repo=&pr=`) | query (optional filters) | `{totals: {SHIP, DO_NOT_SHIP, STALE, BLOCKED, OVERRIDDEN}, byRule: [{ruleId, count}] desc, policyOverrides, window: {receipts, since}}` derived server-side from the ledger; empty ledger yields all zeros (`{receipts: 0, since: null}`); tampered ledgers still answer 200 (never throws) | 400 `invalid repo filter` / `invalid pr filter` on malformed filters; 401 without token on remote bind (`/api/healthz` exempt) |
+| `GET /api/ledger/verify` (`?repo=&pr=`) | query (optional filters) | ledger-integrity check via `lib/receipt.js` (`verifyReceipt` per receipt + per-repo+pr `prev_receipt_id` linkage over full ledger order, so filters never cause false linkage failures): `{ok: true, checked}` or `{ok: false, bad: [...]}` with bad receipt ids; empty ledger yields `{ok: true, checked: 0}`; always 200 on content, never a transport error for bad content | 400 `invalid pr filter` / `invalid repo filter` on malformed filters; 401 without token on remote bind |
+| `GET /api/orgs`, `GET /api/orgs/:id/repos` | — | org list (`{orgs: [{id, name}]}`) / linked-repo rows enriched like `/api/repos` (display only, never mutated). Wired by `sentinel serve --org-store <path>` (server option `orgStorePath`, `lib/org-store.js` file; fail-closed boot on a missing file: stderr `Error: cannot read org store file: <path>`, exit 1, no socket) | 404 `{"error":"not found"}` without `--org-store` (plain `sentinel serve`); path scope: 400 malformed org id, 404 unknown org id (never 403, no enumeration) |
 
 `GET /api/repos` and `GET /api/overview` accept `?org=` only when the
-server was constructed with the programmatic `orgStorePath` option
-(`lib/org-store.js` file); otherwise the parameter is ignored (v1a shapes
-byte-identical), and malformed/unknown org ids answer 400 (never 404, so
-org existence cannot be confused with a missing route).
+server was constructed with `orgStorePath` — wired via
+`sentinel serve --org-store <path>` (`lib/org-store.js` file); otherwise
+the parameter is ignored (v1a shapes byte-identical), and
+malformed/unknown org ids answer 400 (never 404, so org existence cannot
+be confused with a missing route). Behavioral contract:
+`test/console-org.test.mjs`; CLI flag contract:
+`test/cli-orgstore.test.mjs`; health/ledger contract:
+`test/console-health.test.mjs` (+ UI markers in
+`test/console-health-ui.test.mjs`: `#/health` + `#/integrity` nav,
+`vHealth`/`vIntegrity` views polling the aggregate routes only, five
+verdict cards never color-only, `esc()` on all rendered ids/counts).
 
 All timestamps ISO8601 UTC. All errors `{error: string}` with no stack
 leaks. POST routes validate `Content-Type: application/json`.

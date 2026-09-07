@@ -140,7 +140,12 @@ workspace link, duplicate repo per org, non-owner/admin role change) and
 on corrupt store files (throws, never silently resets); writes are atomic
 (tmp + rename); every mutation appends one audit event. Console scoping
 (`GET /api/repos?org=`, `GET /api/overview?org=`,
-`GET /api/orgs/:id/repos`) reads this store via the programmatic
-`orgStorePath` server option — **not** exposed as a `sentinel serve`
-flag, so under plain `sentinel serve` org routes answer 404 and `?org=`
-is ignored (v1a shapes byte-identical).
+`GET /api/orgs`, `GET /api/orgs/:id/repos`; see
+`docs/console-v1-design.md` §4) reads this store via the server
+`orgStorePath` option, wired as `sentinel serve --org-store <path>`
+(`bin/sentinel.js` passes the flag through; a missing file fails closed
+at boot with stderr `Error: cannot read org store file: <path>`, exit 1,
+no socket — observed live, contract: `test/cli-orgstore.test.mjs`). Under
+plain `sentinel serve` (no flag) org routes answer 404
+`{"error":"not found"}` and `?org=` is ignored (v1a shapes
+byte-identical).

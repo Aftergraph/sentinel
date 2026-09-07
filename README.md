@@ -27,7 +27,7 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
 | `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
 | `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
-| `docs/mcp.md` | MCP server tools (12, read-only) + client setup |
+| `docs/mcp.md` | MCP server tools (14, read-only) + client setup |
 | `docs/receipts-v0.1.md` | Receipt/ledger format + `verify` contract |
 | `docs/override.md` | Verdict override: `--override` flags, `OVERRIDDEN` receipt line, fail-closed errors |
 | `docs/console-v1-design.md` | Console API contract (route table) + views |
@@ -58,7 +58,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 330 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+Full suite: `npm test` — 345 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
 1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
@@ -77,12 +77,17 @@ node bin/sentinel.js serve --port 8787
 # open http://127.0.0.1:8787 in a browser
 node bin/sentinel.js serve --topology platform-topology.json --org-state latest-org-state.json  # org-wide rows (docs/console-v1b.md)
 node bin/sentinel.js serve --evidence-store ./evidence.json  # persist sealed verify-run evidence (docs/pipeline.md)
+node bin/sentinel.js serve --org-store ./orgs.json        # org scoping for /api/orgs* + ?org= (docs/console-v1-design.md §4)
 ```
 
 Board, run, rules, config, ledger views over the same verdict engine —
 what the UI shows is byte-identical to the CLI (`docs/console-v1-design.md`).
 Binds 127.0.0.1 by default; remote bind requires `--token` or
-`SENTINEL_CONSOLE_TOKEN`.
+`SENTINEL_CONSOLE_TOKEN`. `--org-store` fails closed at boot on a missing
+file — stderr `Error: cannot read org store file: <path>`, exit 1, no
+socket listens (observed live; contract: `test/cli-orgstore.test.mjs`).
+`bin/sentinel.js --help` lists both `--evidence-store <p>` and
+`--org-store <p>` on the `serve` usage line; output matches this file.
 
 CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never treat 2 as failure):
 
