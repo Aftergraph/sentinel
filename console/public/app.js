@@ -227,7 +227,18 @@ function findingItem(f) {
 function prPanels(p) {
   const staleBanner = (p.stale || p.verdict === 'STALE')
     ? `<p class="stale-banner" role="status">◐ STALE — ${esc(p.staleReason || `verdict STALE at ${short(p.headSha)}`)}</p>` : '';
-  const overview = `${staleBanner}<p>${pill(p.verdict)} <span class="dim">pack <code>${esc(p.rulePackVersion || '')}</code></span></p>` +
+  // Verdict-override banner: attention, not failure/success — amber via
+  // .override-banner (never red/green), icon+label+text, every value
+  // through esc(). Renders only when the record carries an override.
+  const o = (p.overridden && typeof p.overridden === 'object') ? p.overridden : null;
+  const overrideBanner = (o || p.overriddenFrom != null)
+    ? `<p class="override-banner" role="status">○ OVERRIDDEN — by ${esc(o?.actor ?? '')} (${esc(o?.reason ?? '')}) — was ${esc(o?.from ?? p.overriddenFrom ?? '')}</p>` : '';
+  // Policy evaluation line: `policy <name>@<hash> <verdict>`, present only
+  // when the record carries an evaluation (absent cleanly when null).
+  const pe = (p.policyEvaluation && typeof p.policyEvaluation === 'object') ? p.policyEvaluation : null;
+  const policyLine = pe
+    ? `<p class="dim">policy ${esc(pe.policyVersion ?? 'unknown')} ${esc(pe.verdict ?? '')}</p>` : '';
+  const overview = `${staleBanner}${overrideBanner}<p>${pill(p.verdict)} <span class="dim">pack <code>${esc(p.rulePackVersion || '')}</code></span></p>${policyLine}` +
     `<p>HEAD <code>${esc(p.headSha)}</code>` +
     (p.requestedHead ? ` · requested <code>${esc(p.requestedHead)}</code>` : '') + `</p>` +
     (p.counts ? `<p class="dim">blocking ${p.counts.blocking ?? '?'} · silenced ${p.counts.silenced ?? '?'} · advisory ${p.counts.nonBlocking ?? '?'} · excluded ${p.counts.excluded ?? '?'}</p>` : '') +

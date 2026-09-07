@@ -299,6 +299,27 @@ test('readDiffInput: file ok, missing throws', () => {
   }
 });
 
+test('makeReceipt: attestation passthrough outside the hashed body', () => {
+  const base = {
+    repo: 'o/r', prNumber: 1, headSha: 'h'.repeat(40), baseSha: 'b'.repeat(40),
+    rulePackVersion: RULE_PACK_VERSION, verdict: 'DO_NOT_SHIP',
+    blocking: [], silenced: [], nonBlocking: [], excluded: [], checksPassed: 21,
+    overridden: { actor: 'jonas', reason: 'demo', from: 'SHIP', to: 'DO_NOT_SHIP' },
+    overriddenFrom: 'SHIP',
+    policyEvaluation: { policyVersion: 'default@abc', verdict: 'SHIP', reasons: [] },
+  };
+  const withAtt = makeReceipt({ ...base, findings: { blocking: [], silenced: [], nonBlocking: [], excluded: [] } });
+  const { overridden, overriddenFrom, policyEvaluation, ...rest } = base;
+  void overridden; void overriddenFrom; void policyEvaluation;
+  const withoutAtt = makeReceipt({ ...rest, findings: { blocking: [], silenced: [], nonBlocking: [], excluded: [] } });
+  assert.deepEqual(withAtt.overridden, base.overridden);
+  assert.equal(withAtt.overriddenFrom, 'SHIP');
+  assert.deepEqual(withAtt.policyEvaluation, base.policyEvaluation);
+  assert.equal(withAtt.receipt_id, withoutAtt.receipt_id, 'attestation must not move receipt ids');
+  assert.deepEqual(verifyReceipt(withAtt), { valid: true });
+  assert.deepEqual(verifyReceipt(withoutAtt), { valid: true });
+});
+
 test('formatHuman color: ANSI only when asked', () => {
   const res = computeVerdict(
     [{ ruleId: 'no-eval-with-dynamic-input', file: 'a.js', line: 1, evidence: 'eval(x)' }],

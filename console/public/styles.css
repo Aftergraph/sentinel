@@ -116,6 +116,10 @@ ol.queue, ul.queue { list-style: none; margin: 8px 0; padding: 0; }
 .pill.verified { background: #052e22; color: var(--green); }
 .stale-banner { color: var(--orange); border: 1px solid var(--orange);
   border-radius: var(--radius); padding: 10px 12px; }
+/* Verdict-override banner: attention, not failure/success — amber
+   (never red/green); the OVERRIDDEN label carries meaning, never color. */
+.override-banner { color: var(--orange); border: 1px solid var(--orange);
+  border-radius: var(--radius); padding: 10px 12px; }
 /* Finding detail: brand law — AI estimate is purple, verified evidence is
    green; the two panels never share a color (see app.js findingDetailHtml).
    Both are static panels: no motion, so the global prefers-reduced-motion

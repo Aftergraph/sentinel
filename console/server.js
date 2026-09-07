@@ -399,6 +399,9 @@ export function createConsoleServer(opts = {}) {
       baseSha,
       rulePackVersion: pack,
       verdict: result.verdict,
+      overridden: result.overridden,
+      overriddenFrom: result.overriddenFrom,
+      policyEvaluation: result.policyEvaluation,
       findings: snapshot,
       counts: {
         blocking: snapshot.blocking.length,
@@ -812,6 +815,12 @@ export function createConsoleServer(opts = {}) {
       timestamp: e.timestamp,
       counts: e.counts || null,
     }));
+    // Additive override/policy passthrough (display only — the ledger
+    // receipt is the source of truth). When the latest receipt carries a
+    // verdict-override audit trail or a policy evaluation, the record
+    // surfaces them; otherwise these keys are omitted entirely so
+    // pre-existing record shapes stay byte-identical.
+    const overridePresent = latest.overridden != null || latest.overriddenFrom != null;
     return {
       repo,
       prNumber,
@@ -829,6 +838,11 @@ export function createConsoleServer(opts = {}) {
       receipt: latest,
       evidence,
       activity,
+      ...(overridePresent ? {
+        ...(latest.overridden != null ? { overridden: latest.overridden } : {}),
+        overriddenFrom: latest.overriddenFrom ?? latest.overridden?.from ?? null,
+      } : {}),
+      ...(latest.policyEvaluation != null ? { policyEvaluation: latest.policyEvaluation } : {}),
     };
   }
 
