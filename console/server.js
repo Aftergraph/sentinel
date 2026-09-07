@@ -6,6 +6,7 @@
 // createServer. Spec: docs/console-v1-design.md §4 (contract table).
 
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +110,21 @@ function isLoopbackIp(ip) {
 // Fixed 429 body — never echoes request content (no path, query, or
 // body bytes are reflected).
 const RATE_LIMITED_BODY = JSON.stringify({ error: 'rate limited' });
+
+// Request-id tracing (observability, additive). Every request gets an
+// id: an inbound X-Request-Id is honored byte-identically when it is a
+// non-empty string (any non-empty value is accepted as-is — no length
+// cap, no normalization, no truncation; a missing or empty header falls
+// back to a generated UUIDv4). The id is echoed on EVERY response via
+// the X-Request-Id header (2xx + 4xx + 5xx) and is logged to the trace
+// stream; it NEVER appears in a response body (unexpected-500 bodies
+// stay a fixed generic message so internals cannot leak).
+function resolveRequestId(req) {
+  const raw = req && req.headers ? req.headers['x-request-id'] : undefined;
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof first === 'string' && first.length > 0) return first;
+  return randomUUID();
+}
 
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -220,7 +236,10 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, rateLimit, noExemptLoopback } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, rateLimit, noExemptLoopback, logStream } = opts;
+  // Trace sink for the one-structured-line-per-request log; injectable
+  // for tests, defaults to process.stderr in production.
+  const traceLog = logStream ?? process.stderr;
   // Rate limiting (abuse hardening, additive): per-IP token-bucket on
   // /api/* except /api/healthz. Default { windowMs: 60000, max: 300 }.
   // Loopback (127.0.0.1/::1) is exempt BY DEFAULT; pass
@@ -1309,8 +1328,43 @@ export function createConsoleServer(opts = {}) {
   }
 
   return async function consoleHandler(req, res) {
+    // Tracing setup runs BEFORE anything that can throw, so even 400s
+    // from a bad request-target and unexpected 500s carry the id.
+    const requestId = resolveRequestId(req);
+    const startedMs = Date.now();
+    try { res.setHeader('X-Request-Id', requestId); } catch { /* never fail a request on tracing */ }
+    // Capture the outbound status for the trace line regardless of which
+    // response path runs (sendJson, 429 fast-path, or static serving).
+    let statusOut = 200;
+    const origWriteHead = res.writeHead.bind(res);
+    res.writeHead = (code, ...args) => {
+      if (Number.isInteger(code)) statusOut = code;
+      return origWriteHead(code, ...args);
+    };
     const send = (code, obj) => sendJson(res, code, obj);
+    // Exactly one structured line per request. Only fixed-shape fields
+    // are logged — never bodies, headers, query strings, or tokens.
+    const traceDone = () => {
+      try {
+        if (!traceLog || typeof traceLog.write !== 'function') return;
+        let path = '/';
+        try {
+          path = new URL(req.url || '/', 'http://console.local').pathname;
+        } catch {
+          path = String((req && req.url) || '/').split('?')[0] || '/';
+        }
+        traceLog.write(`${JSON.stringify({
+          ts: new Date().toISOString(),
+          id: requestId,
+          method: req.method || 'GET',
+          path,
+          status: statusOut,
+          ms: Date.now() - startedMs,
+        })}\n`);
+      } catch { /* tracing must never break responses */ }
+    };
     try {
+      try {
       let url;
       try {
         url = new URL(req.url || '/', 'http://console.local');
@@ -1454,9 +1508,18 @@ export function createConsoleServer(opts = {}) {
       if (path.startsWith('/api/')) return send(404, { error: 'not found' });
       if (method !== 'GET' && method !== 'HEAD') return send(404, { error: 'not found' });
       return serveStatic(path, res, send, method);
-    } catch (err) {
-      const status = err instanceof HttpError ? err.status : 500;
-      return send(status, { error: err && err.message ? String(err.message) : 'internal error' });
+      } catch (err) {
+        if (err instanceof HttpError) {
+          // Curated errors keep their status + message (including the
+          // fixed safe 500s such as 'evidence store unavailable').
+          return send(err.status, { error: err && err.message ? String(err.message) : 'internal error' });
+        }
+        // Unexpected failures stay generic: no raw message, no stack, no
+        // request id in the body (the id travels on the header only).
+        return send(500, { error: 'internal error' });
+      }
+    } finally {
+      traceDone();
     }
   };
 }

@@ -36,6 +36,7 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/vision-software-verification-platform.md` | Platform vision |
 | `docs/roadmap-S0-S10.md` | S0–S10 roadmap (org policies at S5) |
 | `docs/cloudflare.md` | Cloudflare hosting path |
+| `docs/ARCHITECTURE.md` | Module map, data flows, test map, extension guide |
 
 ## CLI quickstart
 
@@ -58,7 +59,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 372 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+Full suite: `npm test` — 414 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
 1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
