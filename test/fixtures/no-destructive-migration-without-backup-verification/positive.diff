@@ -1,0 +1,11 @@
+diff --git a/db/migrations/042_drop_legacy_email.sql b/db/migrations/042_drop_legacy_email.sql
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/db/migrations/042_drop_legacy_email.sql
+@@ -0,0 +1,5 @@
++-- Remove legacy email column after backfill
++ALTER TABLE users DROP COLUMN legacy_email;
++-- Cleanup old audit table, no longer queried
++DROP TABLE legacy_audit_log;
++TRUNCATE TABLE temp_import_staging;

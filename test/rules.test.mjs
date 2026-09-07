@@ -12,6 +12,7 @@ const RULES = [
   'require-transaction-rollback-on-failure',
   'no-unindexed-schema-migration-on-large-tables',
   'no-n-plus-one-queries-in-api-resolvers',
+  'no-destructive-migration-without-backup-verification',
   'require-dataloader-or-eager-load-for-nested-fetches',
 ];
 
