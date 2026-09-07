@@ -169,6 +169,22 @@ function readBody(req) {
   });
 }
 
+// Recently-seen GitHub delivery ids (bounded LRU-ish: redelivered webhooks
+// must not create duplicate ledger lines/audit events — the product contract
+// requires idempotent delivery. Best-effort per process; restarts lose it,
+// but content-level idempotence (same head → same record/run) still holds).
+const seenDeliveries = new Map();
+const MAX_SEEN_DELIVERIES = 1000;
+function noteDelivery(id) {
+  if (seenDeliveries.has(id)) return false;
+  seenDeliveries.set(id, Date.now());
+  if (seenDeliveries.size > MAX_SEEN_DELIVERIES) {
+    const oldest = seenDeliveries.keys().next().value;
+    seenDeliveries.delete(oldest);
+  }
+  return true;
+}
+
 export function createHandler({ platform, secret, opts }) {
   return async (req, res) => {
     const json = (code, obj) => {
@@ -182,6 +198,10 @@ export function createHandler({ platform, secret, opts }) {
         return json(401, { error: 'bad signature' });
       }
       const event = req.headers['x-github-event'];
+      const delivery = req.headers['x-github-delivery'];
+      if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
+        return json(200, { ok: true, deduped: true, action: 'duplicate-delivery' });
+      }
       const payload = JSON.parse(raw.toString('utf8'));
       const out = await routeEvent({ event, payload, platform, opts });
       return json(200, { ok: true, ...out });

@@ -77,6 +77,19 @@ Malformed input throws `Invalid policy: <reason>` — never a weakened policy.
 
 ## Scope resolution and evaluation
 
+Field contract — verdict-enforcing vs informational:
+
+- Enforcing: `spec.scope.repo` + `spec.scope.paths` (which findings are
+  in scope — see below), `spec.required` (missing result ⇒ BLOCKED, ran
+  and failed ⇒ DO_NOT_SHIP), `spec.blocking_severity` (in-scope finding
+  at one of these severities ⇒ DO_NOT_SHIP). Unknown entries in
+  `blocking_severity` throw `Invalid policy: unknown severity` — they
+  are never silently ignored.
+- Informational only: `metadata.*` (name is pinned into verdicts/audit
+  for traceability but changes nothing), `spec.approvals` (parsed and
+  preserved, not verdict-enforcing — human approvals live outside the
+  deterministic gate).
+
 - `resolvePolicy(policies, { repo, path })` picks the most-specific match:
   longest literal path-prefix wins; repo-scoped beats org-wide on ties;
   a `paths: []` policy is the repo/org default. No match throws

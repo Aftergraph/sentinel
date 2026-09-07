@@ -8,7 +8,8 @@
 // throw — fail closed), upserts idempotently (redelivery merges repo names
 // with no duplicates), and appends one `integration.changed` audit event
 // per delivery via ../../lib/audit.js.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { append } from '../../lib/audit.js';
@@ -22,17 +23,20 @@ export function defaultPrStorePath() {
 }
 
 // Load the store object (key -> record). Missing file yields an empty
-// store; a corrupt or non-object file yields an empty store rather than
-// failing the webhook path (payload validation still fails closed).
+// store; a corrupt or non-object file THROWS fail-closed — silently
+// resetting installation bindings would let PRs merge unverified.
 export function loadStore(path = defaultStorePath()) {
   if (!existsSync(path)) return {};
+  let raw;
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw;
-  } catch {
-    return {};
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new Error(`github store: corrupt store file (${path}): ${err.message}`);
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`github store: corrupt store file (${path}): not an object`);
+  }
+  return raw;
 }
 
 export function saveStore(store, path = defaultStorePath()) {
@@ -40,7 +44,10 @@ export function saveStore(store, path = defaultStorePath()) {
     throw new Error('saveStore requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  // Atomic write via uniquely-named tmp (no predictable sibling, no partial).
+  const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, path);
   return store;
 }
 

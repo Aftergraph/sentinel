@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { review, resolveFinding, VALID_FORMATS } from '../lib/review.js';
+import { review, resolveFinding, VALID_FORMATS, ghApiArgv } from '../lib/review.js';
 import { RULE_PACK_VERSION, SUPPORTED_PACKS } from '../lib/rulepack.js';
 import { SOURCE_ENUM, verifyReceipt } from '../lib/receipt.js';
 import { createConsoleServer, listen as listenConsole } from '../console/server.js';
@@ -43,7 +43,7 @@ function cliPaint(text, code, on) {
 }
 
 function cliGhApi(endpoint, repo) {
-  const out = execSync(`gh api repos/${repo}/${endpoint}`, { encoding: 'utf8' });
+  const out = execFileSync('gh', ghApiArgv(repo, endpoint), { encoding: 'utf8' });
   return JSON.parse(out);
 }
 
@@ -154,10 +154,9 @@ async function reviewWithPolicy({
     const prData = cliGhApi(`pulls/${pr}`, repo);
     headSha = prData.head.sha;
     baseShaStart = prData.base.sha;
-    diffText = execSync(
-      `gh api repos/${repo}/pulls/${pr} -H "Accept: application/vnd.github.v3.diff"`,
-      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
-    );
+    diffText = execFileSync('gh',
+      [...ghApiArgv(repo, `pulls/${pr}`), '-H', 'Accept: application/vnd.github.v3.diff'],
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
   }
 
   const ledgerFile = ledgerPath || receiptDefaultLedgerPath();
@@ -441,9 +440,13 @@ Read-only by construction: review performs zero writes to the repo, PR, or
 checks (ledger + stdout are local). Verdicts go to stdout only.`);
 }
 
-const { values, positionals } = parseArgs({
+let values;
+let positionals;
+try {
+  ({ values, positionals } = parseArgs({
   allowPositionals: true,
-  strict: false,
+  // Strict: typo'd flags fail closed instead of being silently ignored.
+  strict: true,
   options: {
     pr: { type: 'string' },
     repo: { type: 'string' },
@@ -479,7 +482,11 @@ const { values, positionals } = parseArgs({
     help: { type: 'boolean', default: false },
     version: { type: 'boolean', default: false },
   }
-});
+  }));
+} catch (err) {
+  console.error(`Error: ${err.message}\nRun 'sentinel --help' for usage.`);
+  process.exit(1);
+}
 
 const cmd = positionals[0];
 
