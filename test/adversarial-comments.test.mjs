@@ -123,6 +123,27 @@ test('adversarial: secrets are data, not instructions — comments still leak', 
   );
 });
 
+test('adversarial: live code with trailing comments still fires (no overcorrection)', () => {
+  // The wave-20–23 guards skip FULL-LINE comments only. Live statements
+  // with trailing comments must keep firing.
+  const cases = [
+    ['no-process-exit-in-server-code', 'src/a.js', '+process.exit(1); // shutdown now'],
+    ['no-console-log-in-server-diff', 'src/a.js', '+console.log(x); // debug'],
+    [
+      'require-retry-with-backoff-for-transient-failures',
+      'src/a.js',
+      '+fetch(u).catch(() => fetch(u)); // retry',
+    ],
+    ['no-destructive-sql-without-guard', 'migrations/1.sql', '+DROP TABLE users; -- cleanup'],
+    ['require-where-on-delete-update', 'migrations/1.sql', '+DELETE FROM t; -- no scope yet'],
+    ['require-health-check-before-traffic-shift', 'k8s/a.yaml', '+      - image: registry/x:v1 # prod'],
+    ['no-unpinned-github-action-ref', '.github/workflows/c.yml', '+      - uses: actions/checkout@v4 # pin later'],
+  ];
+  for (const [id, path, line] of cases) {
+    assert.ok(byId[id](diff(path, line)).length >= 1, `${id} missed live code with trailing comment`);
+  }
+});
+
 test('adversarial: migration backup hatch still reads comments (documented contract)', () => {
   const d = diff(
     'db/migrations/043_x.sql',
