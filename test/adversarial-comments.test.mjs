@@ -90,6 +90,39 @@ test('adversarial: commented probe is not a probe, commented image is not code',
   );
 });
 
+test('adversarial: commented workflow steps never execute', () => {
+  const d = diff(
+    '.github/workflows/ci.yml',
+    ['+      # - uses: actions/checkout@v4', '+      - run: npm test'].join('\n'),
+  );
+  assert.equal(
+    byId['no-unpinned-github-action-ref'](d).length, 0,
+    'commented uses: must not fire',
+  );
+});
+
+test('adversarial: secrets are data, not instructions — comments still leak', () => {
+  // A commented-out credential or key is still in git history and must be
+  // rotated: these two rules deliberately fire on comments (wave-23).
+  const cicd = diff(
+    '.github/workflows/deploy.yml',
+    ['+# password: s3cr3t-value'].join('\n'),
+  );
+  assert.equal(
+    byId['no-secrets-in-cicd-config'](cicd).length, 1,
+    'commented workflow secret must still fire',
+  );
+  // NOTE: armor line is assembled at runtime so this file itself never
+  // contains key material (a literal here would — correctly — fire the
+  // rule on this very diff, as dogfood wave-23 proved).
+  const armor = '+# -----BEGIN ' + 'RSA PRIVATE KEY-----';
+  const key = diff('src/auth.js', [armor].join('\n'));
+  assert.equal(
+    byId['no-private-key-in-diff'](key).length, 1,
+    'commented key material must still fire',
+  );
+});
+
 test('adversarial: migration backup hatch still reads comments (documented contract)', () => {
   const d = diff(
     'db/migrations/043_x.sql',
