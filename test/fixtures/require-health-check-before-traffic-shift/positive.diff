@@ -22,3 +22,14 @@ index 3333333..4444444 100644
    name: worker
 +      containers:
 +      - image: registry/worker:v2
+diff --git a/k8s/hasty-deploy.yaml b/k8s/hasty-deploy.yaml
+index 9999999..aaaaaaa 100644
+--- a/k8s/hasty-deploy.yaml
++++ b/k8s/hasty-deploy.yaml
+@@ -1,3 +1,5 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
++#        readinessProbe: TODO add later
++      containers:
++      - image: registry/hasty:v1
