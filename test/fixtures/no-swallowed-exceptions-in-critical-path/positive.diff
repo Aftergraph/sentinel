@@ -1,0 +1,17 @@
+diff --git a/src/api/resolvers.js b/src/api/resolvers.js
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/api/resolvers.js
+@@ -0,0 +1,12 @@
++export async function getOrder(id) {
++  try {
++    return await db.orders.findById(id);
++  } catch (err) {}
++}
++export async function chargeOrder(id) {
++  try {
++    return await billing.charge(id);
++  } catch {
++  }
++}
