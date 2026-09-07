@@ -1,0 +1,76 @@
+# CLI v0 Product Design — Sentinel by Aftergraph
+
+**Wedge guardrail:** Sentinel turns pull requests into merge-ready verdicts. First wedge: CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App.
+
+Status: design (no code). Locks the v0 command contract, rule-pack, and storage before scaffolding.
+
+## 1. Command contract
+
+```
+$ sentinel review --pr 42 [--repo owner/name] [--format human|json] [--rule-pack 1.0.0]
+HEAD <sha> (verified: base main@<sha> unchanged since review start)
+
+DO NOT SHIP — 2 findings
+1. [security] Unauthenticated DELETE route — routes/admin.mjs:41
+   Rule: no-unauthenticated-api-endpoints. Evidence: no auth middleware on DELETE /admin/purge.
+...
+
+4 checks passed: secrets-scan, lockfile-consistency, test-status, diff-size.
+```
+
+- `--repo` defaults to `origin` remote of cwd. `--format json` emits the Review + Verdict + Finding records per `docs/data-model-v0.md` (machine surface for CI gates).
+- Auth: read-only GitHub token (`gh auth` env reuse first, `GITHUB_TOKEN` fallback). CLI never writes to the repo, PR, or checks — verdict goes to stdout only.
+
+## 2. Exit codes (contract, never silently changed)
+
+| Code | Meaning |
+|---|---|
+| 0 | SHIP — verified HEAD, no blocking findings |
+| 1 | DO NOT SHIP — verified HEAD, ≥1 blocking finding |
+| 2 | STALE — base moved mid-review; no verdict issued |
+
+Exit 2 is distinct from findings by design: CI gates must treat STALE as re-run, never as failure.
+
+## 3. Rule-pack v0 (`sentinel-rules@1.0.0`, 10 rules)
+
+Selected from `prototype/rule-gap-list.md` for highest postmortem-cost × static-detectability. All [VERIFY]-marked rules excluded from v0 (decisions.md #8).
+
+| # | Rule | Severity | Detects on |
+|---|---|---|---|
+| 1 | no-unauthenticated-api-endpoints | security | route table vs auth middleware (JS/TS) |
+| 2 | no-hardcoded-secrets-in-source | security | entropy + known-prefix scan on diff |
+| 3 | no-secrets-in-cicd-config | security | workflow files in diff |
+| 4 | no-race-condition-in-state-mutation | security | check-then-act patterns on shared state |
+| 5 | enforce-idempotency-on-writes | security | POST/mutation handlers without idempotency key |
+| 6 | require-transaction-rollback-on-failure | reliability | migration files without DOWN/rollback block |
+| 7 | no-unindexed-schema-migration-on-large-tables | data | migrations adding index/column without CONCURRENTLY |
+| 8 | no-bulk-write-without-batching | data | unbounded bulk insert/update loops |
+| 9 | no-n-plus-one-queries-in-api-resolvers | performance | resolvers querying inside result loops |
+| 10 | require-dataloader-or-eager-load-for-nested-fetches | performance | nested-fetch without batching (companion to 9) |
+
+Rules 7–10, 12–14, 18–20 of the gap list are v1 expansion. Rule-pack is versioned and org-owned; a verdict always names its pack version.
+
+## 4. Resolution memory
+
+- Store: local append-only JSONL at `~/.sentinel/resolutions.jsonl` (one record per resolved finding: ruleId + file + line-fingerprint + resolvingHeadSha). No server, no account — CLI runs as the invoking engineer (data-model-v0 non-entities).
+- On each run, findings matching a resolution record for the same file+rule are reported as `resolved (not re-reported)` and excluded from the blocking count. Resolved findings never flip a verdict on the same HEAD.
+- New HEAD = new Review; memory carries across reviews so fixed findings stay silent.
+
+## 5. CI usage (v0 target)
+
+```yaml
+- run: sentinel review --pr ${{ github.event.pull_request.number }} --format json
+```
+
+Gate on exit code: 0 pass, 1 fail, 2 re-run. Dogfood target: every Aftergraph studio PR gets a verdict; exit criterion 10 repos running CLI in CI weekly.
+
+## 6. Non-goals (v0)
+
+No auto-fix, no auto-approve, no PR comments (GitHub App phase), no dashboard, no User table, no server component. Style-severity findings are reported but never block.
+
+## 7. Acceptance for v0 slice
+
+- `sentinel review --pr <n>` runs against 5 real Aftergraph PRs reproducing `prototype/5pr-validation.md` verdicts (4/5 match minimum).
+- STALE path proven by a mid-review base move (exit 2, no verdict).
+- Resolution memory proven: fix a finding, re-run same HEAD, finding stays silent.
+- LF-only, Node single-runtime, `npm install -g` ≤5 min path documented.
