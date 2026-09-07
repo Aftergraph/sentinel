@@ -18,6 +18,10 @@ as the CLI (`analyzeDiff`, same rule packs).
 | `sentinel_finding_lifecycle` | `finding?`, `action: validate-transition\|list-states`, `to?`, `reason?`, `actor?` | states, transitions, allowed-next; legality check (ai may not transition; DISMISSED needs a reason). Read-only, never mutates |
 | `sentinel_verify_plan` | `ruleId`, `severity?` | severity + planned checks via `planChecks` (read-only, never executes) |
 | `sentinel_policy_evaluate` | `policyText`, `repo?`, `path?`, `findings?`, `checks?`, `headSha?` | parse + scope-resolve + evaluate (`allowed`, `verdict`, `reasons`, `policyVersion`); malformed input returns `isError`, never throws. See `docs/policy.md` |
+| `sentinel_orgs_list` | `storePath` (required) | org `{id, name}` list + `count`; missing/corrupt file returns `isError`, never throws |
+| `sentinel_org_repos` | `storePath` (required), `orgId` | linked repos for one org + `count`; unknown org returns `isError`, never throws |
+| `sentinel_evidence_get` | `storePath` (required), `id` | one sealed evidence item with hash revalidation (`{storePath, id, item, valid, count}`); tampered/unknown id returns `isError`, never throws |
+| `sentinel_evidence_verify` | `storePath` (required) | `verifyAll` summary (`{storePath, ok, checked, bad, count}`); corrupt file returns `isError`, never throws |
 
 No fix, approve, push, or write tool exists — `decisions.md` #4 holds for
 agents too. `fix.submit` arrives only if the owner reverses #4.

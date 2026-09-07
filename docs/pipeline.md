@@ -100,6 +100,35 @@ fixture git repo.)
   repo+PR or finding is unknown on the latest receipt.
 - `GET /api/verify/:id` returns the run view incl. `progress.done/total`,
   `evidenceIds`, and ledger-head staleness (`stale` + `staleReason`).
+  With a store configured the view gains an `evidence` array (one entry
+  per planned check: `{id, hash, runId, type, targetSha}`).
+
+## Console evidence persistence (`--evidence-store`)
+
+`sentinel serve --evidence-store <path>` opts into sealed-evidence
+persistence for console verify runs (server option `evidenceStorePath`;
+`createEvidenceStore` per `lib/evidence-store.js`). Without the flag every
+helper is inert and the run shapes stay byte-identical (legacy keys only:
+`id, findingRef, targetSha, status, progress, checks, evidenceIds, stale,
+staleReason, ledgerHead` — no `evidence` key, no store file created).
+
+With the flag, starting a run seals one deterministic item per planned
+check (content-addressed, so replaying the same start seals identical
+items) and persists them via the store's atomic write; run views list
+those items from the store with an in-memory fallback (removing the store
+file still serves the start-time sealed items). The store file is
+re-opened per evidence-touching request, so evidence survives server
+restarts on the same store file (a replayed start reclaims the same
+`VR-0001…` id with no duplicate items). The verify-runs registry itself
+stays in-memory and is still lost on restart.
+
+Fail closed: a corrupt/unwritable store answers `500
+{"error":"evidence store unavailable"}` on evidence routes only
+(`POST /api/verify/start`, `GET /api/verify/:id`) — raw store errors,
+paths, and contents never reach the response, the corrupt file is never
+rewritten, and unrelated routes (e.g. `/api/healthz`, `/api/rules`) are
+unaffected. (All shapes above verified live 2026-09-07; behavioral
+contract: `test/console-evidence.test.mjs`, 5 tests.)
 
 ## Org/workspace registry (`lib/org-store.js`)
 

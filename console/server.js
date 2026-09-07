@@ -523,6 +523,153 @@ export function createConsoleServer(opts = {}) {
     return { confidence, open: repos.length, blocked, stale, critical, needsAttention, recentVerdicts };
   }
 
+  // Verification-health roll-up (display only — derived server-side from
+  // the ledger; the only accepted user input is the standard repo/pr
+  // query filters, validated below. Never throws: malformed receipts are
+  // skipped and a missing/empty ledger yields all zeros.)
+  function parseOptionalRepoPr(url) {
+    const repoRaw = url.searchParams.get('repo');
+    const prRaw = url.searchParams.get('pr');
+    let repo = null;
+    let pr = null;
+    if (repoRaw !== null) {
+      if (typeof repoRaw !== 'string' || repoRaw.trim() === '') {
+        throw new HttpError(400, 'invalid repo filter');
+      }
+      repo = repoRaw;
+    }
+    if (prRaw !== null) {
+      if (typeof prRaw !== 'string' || prRaw.trim() === '' || !/^-?\d+$/.test(prRaw.trim())) {
+        throw new HttpError(400, 'invalid pr filter');
+      }
+      pr = prRaw.trim();
+    }
+    return { repo, pr };
+  }
+
+  function buildHealthVerdicts(filter) {
+    let chain = [];
+    try {
+      chain = noLedger ? [] : loadLedger(ledgerPath);
+    } catch {
+      chain = [];
+    }
+    if (!Array.isArray(chain)) chain = [];
+    const f = filter || { repo: null, pr: null };
+    const totals = { SHIP: 0, DO_NOT_SHIP: 0, STALE: 0, BLOCKED: 0, OVERRIDDEN: 0 };
+    const ruleCounts = new Map();
+    let policyOverrides = 0;
+    let since = null;
+    let sinceTime = Infinity;
+    let receipts = 0;
+    for (const r of chain) {
+      if (!r || typeof r !== 'object') continue;
+      if (f.repo !== null && r.repo !== f.repo) continue;
+      if (f.pr !== null && String(r.prNumber) !== String(f.pr)) continue;
+      receipts += 1;
+      try {
+        if (typeof r.verdict === 'string' && Object.prototype.hasOwnProperty.call(totals, r.verdict)) {
+          totals[r.verdict] += 1;
+        }
+      } catch { /* never throws */ }
+      try {
+        if (r.overridden || r.overriddenFrom) policyOverrides += 1;
+      } catch { /* never throws */ }
+      try {
+        const snap = r.findings && typeof r.findings === 'object' ? r.findings : null;
+        const blocking = snap && Array.isArray(snap.blocking) ? snap.blocking : [];
+        for (const finding of blocking) {
+          const id = finding && typeof finding.ruleId === 'string' ? finding.ruleId : null;
+          if (!id) continue;
+          ruleCounts.set(id, (ruleCounts.get(id) || 0) + 1);
+        }
+      } catch { /* never throws */ }
+      try {
+        if (typeof r.timestamp === 'string' && r.timestamp) {
+          const t = Date.parse(r.timestamp);
+          if (!Number.isNaN(t) && t < sinceTime) {
+            sinceTime = t;
+            since = r.timestamp;
+          }
+        }
+      } catch { /* never throws */ }
+    }
+    const byRule = [...ruleCounts.entries()]
+      .map(([ruleId, count]) => ({ ruleId, count }))
+      .sort((a, b) => (b.count - a.count) || (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0));
+    return { totals, byRule, policyOverrides, window: { receipts, since } };
+  }
+
+  // Ledger-integrity check (display only — recomputed server-side via
+  // lib/receipt.js: every in-scope receipt is hash-verified with
+  // verifyReceipt and per-repo+pr prev_receipt_id linkage is checked
+  // against the full ledger order, so repo/pr filters never cause false
+  // linkage failures. Returns an integrity result with 200 in both
+  // cases, never a transport error for bad content.)
+  function verifyLedgerChain(filter) {
+    let chain = [];
+    try {
+      chain = noLedger ? [] : loadLedger(ledgerPath);
+    } catch (err) {
+      throw new HttpError(500, err && err.message ? String(err.message) : 'ledger unavailable');
+    }
+    if (!Array.isArray(chain)) chain = [];
+    const f = filter || { repo: null, pr: null };
+    const bad = [];
+    const pushBad = (id) => {
+      if (!bad.includes(id)) bad.push(id);
+    };
+    const lastByKey = new Map();
+    let checked = 0;
+    for (let i = 0; i < chain.length; i += 1) {
+      const r = chain[i];
+      if (!r || typeof r !== 'object') {
+        if (f.repo === null && f.pr === null) {
+          checked += 1;
+          pushBad(`unknown-${i}`);
+        }
+        continue;
+      }
+      let key = null;
+      try {
+        key = `${typeof r.repo === 'string' ? r.repo : String(r.repo)}\0${String(r.prNumber)}`;
+      } catch {
+        key = null;
+      }
+      const inScope = (f.repo === null || r.repo === f.repo)
+        && (f.pr === null || String(r.prNumber) === String(f.pr));
+      if (inScope) {
+        checked += 1;
+        const id = typeof r.receipt_id === 'string' && r.receipt_id ? r.receipt_id : `unknown-${i}`;
+        let valid = false;
+        try {
+          valid = verifyReceipt(r).valid === true;
+        } catch {
+          valid = false;
+        }
+        if (!valid) pushBad(id);
+        try {
+          if (key === null) {
+            pushBad(id);
+          } else {
+            const expected = lastByKey.has(key) ? lastByKey.get(key) : null;
+            const actual = r.prev_receipt_id === undefined ? null : r.prev_receipt_id;
+            if (actual !== expected) pushBad(id);
+          }
+        } catch {
+          pushBad(id);
+        }
+      }
+      try {
+        if (key !== null && typeof r.receipt_id === 'string' && r.receipt_id) {
+          lastByKey.set(key, r.receipt_id);
+        }
+      } catch { /* never throws */ }
+    }
+    if (bad.length > 0) return { ok: false, bad };
+    return { ok: true, checked };
+  }
+
   // PR-detail record (display only — aggregated from the ledger receipts
   // written by finishReview; severity/blocking flags are recomputed from
   // lib/rulepack at serve time, never trusted from stored flags).
@@ -971,6 +1118,12 @@ export function createConsoleServer(opts = {}) {
       if (method === 'GET' && path === '/api/overview') {
         const scope = resolveOrgQuery(url.searchParams.get('org'));
         return send(200, buildOverview(scope ? scope.rows : null));
+      }
+      if (method === 'GET' && path === '/api/health/verdicts') {
+        return send(200, buildHealthVerdicts(parseOptionalRepoPr(url)));
+      }
+      if (method === 'GET' && path === '/api/ledger/verify') {
+        return send(200, verifyLedgerChain(parseOptionalRepoPr(url)));
       }
       if (method === 'GET' && (path === '/api/pr' || path.startsWith('/api/pr/'))) {
         const parsed = parsePrPath(path);

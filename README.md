@@ -27,8 +27,9 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
 | `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
 | `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
-| `docs/mcp.md` | MCP server tools (8, read-only) + client setup |
+| `docs/mcp.md` | MCP server tools (12, read-only) + client setup |
 | `docs/receipts-v0.1.md` | Receipt/ledger format + `verify` contract |
+| `docs/override.md` | Verdict override: `--override` flags, `OVERRIDDEN` receipt line, fail-closed errors |
 | `docs/console-v1-design.md` | Console API contract (route table) + views |
 | `docs/console-v1b.md` | Org-wide topology/org-state flags |
 | `docs/rulepack-v1.2.md` | Current rule pack (21 rules) + deliberately-excluded rule |
@@ -48,6 +49,7 @@ sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
 git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
+git diff | sentinel review --diff - --repo myorg/myrepo --override DO_NOT_SHIP --override-reason incident-123 --override-actor alice  # break-glass override, fail-closed (docs/override.md)
 sentinel verify run --finding <ruleId:file:line> --repo-dir . --commands ./commands.json  # isolated verify run (docs/pipeline.md)
 sentinel resolve --rule-id <id> --file <path> --reason <text>  # silence a finding (memory)
 sentinel --help                       # every flag documented; output matches this file
@@ -56,7 +58,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 288 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+Full suite: `npm test` — 330 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
 1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
@@ -74,6 +76,7 @@ isolated verify runs (`verify run`, `docs/pipeline.md`),
 node bin/sentinel.js serve --port 8787
 # open http://127.0.0.1:8787 in a browser
 node bin/sentinel.js serve --topology platform-topology.json --org-state latest-org-state.json  # org-wide rows (docs/console-v1b.md)
+node bin/sentinel.js serve --evidence-store ./evidence.json  # persist sealed verify-run evidence (docs/pipeline.md)
 ```
 
 Board, run, rules, config, ledger views over the same verdict engine —

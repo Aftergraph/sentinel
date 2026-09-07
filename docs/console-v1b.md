@@ -13,6 +13,11 @@ sentinel serve --topology platform-topology/1.0.json --org-state latest-org-stat
 Both flags are optional and independent. Until either is given, the v1a
 manual list applies and `/api/repos` keeps its exact v1a shape.
 
+`sentinel serve --evidence-store <path>` (also optional, independent)
+persists sealed evidence for console verify runs — see
+`docs/pipeline.md` ("Console evidence persistence"). Without it the
+verify run shapes stay byte-identical to v1a.
+
 ## File formats (tolerant reader)
 
 - `--topology`: an Aftergraph `platform-topology/1.0.json` repo list —
