@@ -7,8 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadRules } from '../lib/review.js';
+import { RULE_PACK_VERSION } from '../lib/rulepack.js';
 
-const rules = await loadRules('1.4.0');
+const rules = await loadRules(RULE_PACK_VERSION);
 const byId = Object.fromEntries(rules.map((r) => [r.ruleId, r.check]));
 
 function diff(path, plus) {
@@ -173,6 +174,30 @@ test('adversarial: whitespace and case variants (wave-25)', () => {
     byId['no-process-exit-in-server-code'](spacedCall).length, 1,
     'space before call paren must fire',
   );
+});
+
+test('adversarial: FK rule scoping (wave-27 sweep)', () => {
+  const fk = byId['require-foreign-key-constraints-on-related-tables'];
+  const fire = [
+    ['db/m/1.sql', '+  user_id BIGINT NOT NULL,'],
+    ['db/m/1.sql', '+  user_id  BIGINT  NOT NULL,'],
+    ['db/m/1.sql', '+  USER_ID bigint NOT NULL,'],
+  ];
+  for (const [path, line] of fire) {
+    assert.equal(fk(diff(path, line)).length, 1, `FK must fire: ${line}`);
+  }
+  const silent = [
+    ['db/m/1.sql', '+-- user_id BIGINT NOT NULL,'],
+    ['db/m/1.sql', '+  id BIGSERIAL PRIMARY KEY,'],
+    ['db/m/1.sql', '+  user_id TEXT NOT NULL,'],
+    ['db/m/1.sql', '+  user_id BIGINT NOT NULL REFERENCES users (id),'],
+    ['db/m/1.sql', '+  subject_id UUID NOT NULL,\n+  subject_type TEXT NOT NULL,'],
+    ['db/m/1.sql', '+  user_id BIGINT NOT NULL,\n+  CONSTRAINT fk_u FOREIGN KEY (user_id) REFERENCES users (id),'],
+    ['src/a.js', '+  user_id BIGINT NOT NULL,'],
+  ];
+  for (const [path, line] of silent) {
+    assert.equal(fk(diff(path, line)).length, 0, `FK must stay silent: ${line}`);
+  }
 });
 
 test('adversarial: migration backup hatch still reads comments (documented contract)', () => {
