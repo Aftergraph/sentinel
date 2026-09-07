@@ -382,6 +382,105 @@ async function vFinding(q) {
   } catch (e) { out.innerHTML = errBox(e.message, false); }
 }
 
+// Health dashboard + ledger-integrity views: read-only polling over GET
+// /api/health/verdicts and GET /api/ledger/verify (the token gate already
+// on those routes covers these views — no new endpoints). Brand law —
+// verdict totals render icon+label+text via the shared .pill/.ok/.bad hues
+// (never color-only); STALE reuses .pill.stale. Both views have no motion
+// of their own so the global prefers-reduced-motion block in styles.css
+// covers them. All controls are native buttons/links, so both views are
+// keyboard reachable. Every interpolated value goes through esc().
+const HEALTH_TOTALS = [
+  ['SHIP', '●', 'pill ship', 'receipts with verdict SHIP'],
+  ['DO_NOT_SHIP', '●', 'pill dns', 'receipts with verdict DO NOT SHIP'],
+  ['STALE', '●', 'pill stale', 'receipts with verdict STALE'],
+  ['BLOCKED', '●', 'pill dns', 'receipts carrying a BLOCKED verdict'],
+  ['OVERRIDDEN', '○', 'pill gray', 'receipts with a policy override'],
+];
+
+function healthCards(totals) {
+  return HEALTH_TOTALS.map(([key, icon, cls, hint]) => {
+    const n = totals && typeof totals[key] === 'number' ? totals[key] : 0;
+    return `<article class="card" tabindex="0" aria-label="${esc(key)}: ${esc(String(n))}"><h3><span class="${esc(cls)}" aria-hidden="true">${esc(icon)} ${esc(key)}</span></h3><p class="bignum">${esc(String(n))}</p><p class="dim">${esc(hint)}</p></article>`;
+  }).join('');
+}
+
+function topRulesHtml(byRule) {
+  if (!byRule || byRule.length === 0) return '<p class="dim">No blocking rules recorded yet.</p>';
+  return '<ol class="queue">' + byRule.slice(0, 10).map((e) =>
+    `<li><strong>${esc(e.ruleId)}</strong> <span class="dim">× ${esc(String(typeof e.count === 'number' ? e.count : 0))} blocking finding(s)</span></li>`).join('') + '</ol>';
+}
+
+// Integrity panel: chain status only — ok:true renders the verified
+// count; ok:false lists the bad receipt ids. Never a raw ledger dump.
+function integrityHtml(v) {
+  if (!v || v.ok !== false) {
+    const n = v && typeof v.checked === 'number' ? v.checked : 0;
+    return `<p class="ok" role="status">● Chain OK — ${esc(String(n))} receipt(s) verified.</p>`;
+  }
+  const bad = Array.isArray(v.bad) ? v.bad : [];
+  return `<p class="bad" role="alert">● Chain FAILED — ${esc(String(bad.length))} bad receipt(s).</p>` +
+    (bad.length === 0 ? '' : '<ul class="queue">' + bad.map((id) => `<li><code>${esc(id)}</code></li>`).join('') + '</ul>');
+}
+
+function healthHtml(h, v) {
+  const receipts = h && h.window && typeof h.window.receipts === 'number' ? h.window.receipts : 0;
+  if (receipts === 0) {
+    return `<div class="errbox"><p>No verdicts recorded yet — run your first review to populate this dashboard.</p><p><a href="#/run">Go to Run →</a></p></div>` +
+      `<section aria-label="Ledger integrity"><h3>Ledger integrity</h3>${integrityHtml(v)}</section>`;
+  }
+  return `<section aria-label="Verdict totals"><div class="cards">${healthCards(h.totals)}</div></section>` +
+    `<section aria-label="Top blocking rules"><h3>Top blocking rules (${esc(String((h.byRule || []).length))})</h3>${topRulesHtml(h.byRule)}</section>` +
+    `<section aria-label="Ledger integrity"><h3>Ledger integrity</h3>${integrityHtml(v)}</section>`;
+}
+
+let healthTimer = null;
+function stopHealthPoll() {
+  if (healthTimer !== null) { clearInterval(healthTimer); healthTimer = null; }
+}
+
+async function loadHealth(out) {
+  try {
+    const [h, v] = await Promise.all([
+      api('GET', '/api/health/verdicts'),
+      api('GET', '/api/ledger/verify'),
+    ]);
+    out.innerHTML = healthHtml(h, v);
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
+async function vHealth() {
+  el.innerHTML = `<h2>Health</h2><p class="dim">Verdict totals and top blocking rules (auto-refreshes every 5s).</p><div id="hout"></div>`;
+  focusContent();
+  const out = document.getElementById('hout');
+  out.innerHTML = skeleton(4);
+  await loadHealth(out);
+  stopHealthPoll();
+  healthTimer = setInterval(() => loadHealth(out), 5000);
+}
+
+let integrityTimer = null;
+function stopIntegrityPoll() {
+  if (integrityTimer !== null) { clearInterval(integrityTimer); integrityTimer = null; }
+}
+
+async function loadIntegrity(out) {
+  try {
+    out.innerHTML = integrityHtml(await api('GET', '/api/ledger/verify'));
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
+async function vIntegrity() {
+  el.innerHTML = `<h2>Integrity</h2><p class="dim">Ledger hash-chain status (auto-refreshes every 2s).</p><div class="row"><button id="irefresh">Refresh now</button></div><div id="iout"></div>`;
+  focusContent();
+  const out = document.getElementById('iout');
+  out.innerHTML = skeleton(2);
+  document.getElementById('irefresh').onclick = () => loadIntegrity(out);
+  await loadIntegrity(out);
+  stopIntegrityPoll();
+  integrityTimer = setInterval(() => loadIntegrity(out), 2000);
+}
+
 // Verification-run view: plain polling over GET /api/verify/:runId (no
 // websockets — a 2s setInterval refreshes the run; the timer is cleared on
 // every route change). Brand law — statuses render icon+label+text via the
@@ -493,11 +592,15 @@ el.addEventListener('click', async (e) => {
 
 async function route() {
   stopVerifyPoll();
+  stopHealthPoll();
+  stopIntegrityPoll();
   const m = (location.hash || '#/board').match(/^#(\/[^?]*)(\?.*)?$/);
   const path = m ? m[1] : '/board';
   const q = new URLSearchParams(m && m[2] ? m[2] : '');
   setNav(path);
   if (path === '/overview') return vOverview();
+  if (path === '/health') return vHealth();
+  if (path === '/integrity') return vIntegrity();
   if (path === '/run') return vRun();
   if (path === '/rules') return vRules();
   if (path === '/config') return vConfig();

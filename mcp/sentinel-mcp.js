@@ -176,6 +176,28 @@ export const TOOLS = [
       required: ['storePath'],
     },
   },
+  {
+    name: 'sentinel_health_verdicts',
+    description: 'Verdict totals + top blocking rules from a ledger file (read-only; missing file returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ledgerPath: { type: 'string', description: 'Path to the ledger JSONL file (required).' },
+      },
+      required: ['ledgerPath'],
+    },
+  },
+  {
+    name: 'sentinel_ledger_verify',
+    description: 'Verify a ledger hash chain via lib/receipt.js (read-only; tampered entries reported with bad ids, missing file returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ledgerPath: { type: 'string', description: 'Path to the ledger JSONL file (required).' },
+      },
+      required: ['ledgerPath'],
+    },
+  },
 ];
 
 function text(obj) {
@@ -199,6 +221,21 @@ function storeError(message, storePath, extra = {}) {
 function requiredStorePath(args) {
   if (!args || typeof args.storePath !== 'string' || args.storePath.trim() === '') return null;
   return args.storePath;
+}
+
+// isError carrier for the ledger read tools. ledgerPath is required (no
+// default probing, never scans the filesystem); every result (success or
+// error) echoes it so callers can correlate responses.
+function ledgerError(message, ledgerPath, extra = {}) {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: message, ledgerPath: ledgerPath ?? null, ...extra }) }],
+    isError: true,
+  };
+}
+
+function requiredLedgerPath(args) {
+  if (!args || typeof args.ledgerPath !== 'string' || args.ledgerPath.trim() === '') return null;
+  return args.ledgerPath;
 }
 
 function fetchPrDiff(repo, pr) {
@@ -482,6 +519,141 @@ export async function dispatch(name, args = {}, ctx = {}) {
         return text({ storePath, ok: report.ok, checked: report.checked, bad: report.bad, count: report.checked });
       } catch (err) {
         return storeError(`sentinel_evidence_verify: ${err.message}`, args?.storePath ?? null);
+      }
+    }
+    case 'sentinel_health_verdicts': {
+      // Read-only roll-up mirroring console GET /api/health/verdicts
+      // (buildHealthVerdicts): verdict totals, blocking-rule histogram
+      // sorted desc (top rules first), policy-override count, window.
+      // ledgerPath is required — never falls back to the default ledger.
+      try {
+        const ledgerPath = requiredLedgerPath(args);
+        if (!ledgerPath) {
+          return ledgerError('sentinel_health_verdicts needs ledgerPath as a non-empty string.', args?.ledgerPath ?? null);
+        }
+        if (!existsSync(ledgerPath)) {
+          return ledgerError(`sentinel_health_verdicts: ledger file not found (${ledgerPath}).`, ledgerPath);
+        }
+        let chain;
+        try {
+          chain = loadLedger(ledgerPath);
+        } catch (err) {
+          return ledgerError(`sentinel_health_verdicts: ${err.message}`, ledgerPath);
+        }
+        if (!Array.isArray(chain)) chain = [];
+        const totals = { SHIP: 0, DO_NOT_SHIP: 0, STALE: 0, BLOCKED: 0, OVERRIDDEN: 0 };
+        const ruleCounts = new Map();
+        let policyOverrides = 0;
+        let receipts = 0;
+        let since = null;
+        let sinceTime = Infinity;
+        for (const r of chain) {
+          if (!r || typeof r !== 'object') continue;
+          receipts += 1;
+          try {
+            if (typeof r.verdict === 'string' && Object.prototype.hasOwnProperty.call(totals, r.verdict)) {
+              totals[r.verdict] += 1;
+            }
+          } catch { /* never throws */ }
+          try {
+            if (r.overridden || r.overriddenFrom) policyOverrides += 1;
+          } catch { /* never throws */ }
+          try {
+            const snap = r.findings && typeof r.findings === 'object' ? r.findings : null;
+            const blocking = snap && Array.isArray(snap.blocking) ? snap.blocking : [];
+            for (const finding of blocking) {
+              const id = finding && typeof finding.ruleId === 'string' ? finding.ruleId : null;
+              if (!id) continue;
+              ruleCounts.set(id, (ruleCounts.get(id) || 0) + 1);
+            }
+          } catch { /* never throws */ }
+          try {
+            if (typeof r.timestamp === 'string' && r.timestamp) {
+              const t = Date.parse(r.timestamp);
+              if (!Number.isNaN(t) && t < sinceTime) {
+                sinceTime = t;
+                since = r.timestamp;
+              }
+            }
+          } catch { /* never throws */ }
+        }
+        const byRule = [...ruleCounts.entries()]
+          .map(([ruleId, count]) => ({ ruleId, count }))
+          .sort((a, b) => (b.count - a.count) || (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0));
+        return text({ ledgerPath, totals, byRule, topRules: byRule, policyOverrides, window: { receipts, since } });
+      } catch (err) {
+        return ledgerError(`sentinel_health_verdicts: ${err.message}`, args?.ledgerPath ?? null);
+      }
+    }
+    case 'sentinel_ledger_verify': {
+      // Read-only chain check mirroring console GET /api/ledger/verify
+      // (verifyLedgerChain with no repo/pr filter). Hash revalidation is
+      // delegated to the imported lib/receipt.js verifyReceipt — the same
+      // verifier the console uses — plus per-repo+pr prev_receipt_id
+      // linkage over full ledger order. ledgerPath is required.
+      try {
+        const ledgerPath = requiredLedgerPath(args);
+        if (!ledgerPath) {
+          return ledgerError('sentinel_ledger_verify needs ledgerPath as a non-empty string.', args?.ledgerPath ?? null, { ok: false, checked: 0, bad: [] });
+        }
+        if (!existsSync(ledgerPath)) {
+          return ledgerError(`sentinel_ledger_verify: ledger file not found (${ledgerPath}).`, ledgerPath, { ok: false, checked: 0, bad: [] });
+        }
+        let chain;
+        try {
+          chain = loadLedger(ledgerPath);
+        } catch (err) {
+          return ledgerError(`sentinel_ledger_verify: ${err.message}`, ledgerPath, { ok: false, checked: 0, bad: [] });
+        }
+        if (!Array.isArray(chain)) chain = [];
+        const bad = [];
+        const pushBad = (id) => {
+          if (!bad.includes(id)) bad.push(id);
+        };
+        const lastByKey = new Map();
+        let checked = 0;
+        for (let i = 0; i < chain.length; i += 1) {
+          const r = chain[i];
+          if (!r || typeof r !== 'object') {
+            checked += 1;
+            pushBad(`unknown-${i}`);
+            continue;
+          }
+          let key = null;
+          try {
+            key = `${typeof r.repo === 'string' ? r.repo : String(r.repo)}\0${String(r.prNumber)}`;
+          } catch {
+            key = null;
+          }
+          checked += 1;
+          const id = typeof r.receipt_id === 'string' && r.receipt_id ? r.receipt_id : `unknown-${i}`;
+          let valid = false;
+          try {
+            valid = verifyReceipt(r).valid === true;
+          } catch {
+            valid = false;
+          }
+          if (!valid) pushBad(id);
+          try {
+            if (key === null) {
+              pushBad(id);
+            } else {
+              const expected = lastByKey.has(key) ? lastByKey.get(key) : null;
+              const actual = r.prev_receipt_id === undefined ? null : r.prev_receipt_id;
+              if (actual !== expected) pushBad(id);
+            }
+          } catch {
+            pushBad(id);
+          }
+          try {
+            if (key !== null && typeof r.receipt_id === 'string' && r.receipt_id) {
+              lastByKey.set(key, r.receipt_id);
+            }
+          } catch { /* never throws */ }
+        }
+        return text({ ledgerPath, ok: bad.length === 0, checked, bad });
+      } catch (err) {
+        return ledgerError(`sentinel_ledger_verify: ${err.message}`, args?.ledgerPath ?? null, { ok: false, checked: 0, bad: [] });
       }
     }
     default:

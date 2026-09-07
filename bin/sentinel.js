@@ -6,6 +6,8 @@ import { SOURCE_ENUM, verifyReceipt } from '../lib/receipt.js';
 import { createConsoleServer, listen as listenConsole } from '../console/server.js';
 import { createPlatform } from '../apps/github/platform.js';
 import { readFileSync } from 'node:fs';
+// Additive: --org-store fail-closed boot check (existence probe only).
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync, execFileSync } from 'node:child_process';
@@ -384,7 +386,7 @@ function printHelp() {
 Usage:
   sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov] [--rule-pack ${SUPPORTED_PACKS.join('|')}] [--source ${SOURCE_ENUM.join('|')}] [--ledger-path <path>] [--no-ledger] [--config <path>] [--memory-path <path>]
   sentinel review --diff <file|-> [--repo owner/name] [--pr <n>] [--head-sha <sha>] [--base-sha <sha>] [same flags as above]
-  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>]
+  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>] [--org-store <p>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
   sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
@@ -452,6 +454,7 @@ const { values, positionals } = parseArgs({
     source: { type: 'string' },
     'ledger-path': { type: 'string' },
     'evidence-store': { type: 'string' },
+    'org-store': { type: 'string' },
     'no-ledger': { type: 'boolean', default: false },
     config: { type: 'string' },
     receipt: { type: 'string' },
@@ -547,6 +550,14 @@ try {
       process.exit(1);
     }
     const ghToken = process.env.GITHUB_TOKEN || undefined;
+    // Additive: --org-store fail-closed boot (a missing file exits non-zero
+    // before any socket listens; the store lib treats missing as empty,
+    // so the CLI probes existence explicitly).
+    const orgStoreFlag = values['org-store'] || undefined;
+    if (orgStoreFlag !== undefined && !existsSync(orgStoreFlag)) {
+      console.error(`Error: cannot read org store file: ${orgStoreFlag}`);
+      process.exit(1);
+    }
     const handler = createConsoleServer({
       ledgerPath: values['ledger-path'] || undefined,
       memoryPath: values['memory-path'] || undefined,
@@ -557,6 +568,7 @@ try {
       topologyPath: values.topology || undefined,
       orgStatePath: values['org-state'] || undefined,
       evidenceStorePath: values['evidence-store'] || undefined,
+      orgStorePath: orgStoreFlag,
     });
     const port = parseInt(values.port || '8787', 10);
     listenConsole(handler, { port, host });
