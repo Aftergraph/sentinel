@@ -10,3 +10,14 @@ index 1111111..2222222 100644
 +    posts: (parent) => postLoader.load(parent.id)
 +  }
 +};
+diff --git a/console/server.mjs b/console/server.mjs
+index 1111111..2222222 100644
+--- a/console/server.mjs
++++ b/console/server.mjs
+@@ -1,3 +1,7 @@
++const handlers = {
++  blast: (params) => {
++    const symbol = params.get('symbol');
++    return lookup(symbol);
++  }
++};

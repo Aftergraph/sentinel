@@ -21,6 +21,7 @@ import { loadConfig } from '../lib/review.js';
 import { HYPOTHESIS, VERIFYING, CONFIRMED, NOT_REPRODUCED, INDETERMINATE, DISMISSED, TERMINAL_STATES } from '../lib/finding.js';
 import { planChecks, severityOf } from '../lib/verify.js';
 import { parsePolicy, resolvePolicy, evaluatePolicy } from '../lib/policy.js';
+import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
 
 export const SERVER_VERSION = (() => {
   try {
@@ -196,6 +197,20 @@ export const TOOLS = [
         ledgerPath: { type: 'string', description: 'Path to the ledger JSONL file (required).' },
       },
       required: ['ledgerPath'],
+    },
+  },
+  {
+    name: 'sentinel_blast_radius',
+    description: 'Blast radius of a file/symbol in a local checkout (read-only graph walk; executes nothing; never throws — errors return isError).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoDir: { type: 'string', description: 'Local checkout directory (required).' },
+        file: { type: 'string', description: 'Repo-relative file path (required, must stay inside repoDir).' },
+        symbol: { type: 'string', description: 'Symbol name (optional; else nearest symbol at line, if given).' },
+        line: { type: 'integer', description: '1-based line number (optional).' },
+      },
+      required: ['repoDir', 'file'],
     },
   },
 ];
@@ -413,6 +428,37 @@ export async function dispatch(name, args = {}, ctx = {}) {
         } catch (err) {
           return toolError(err.message);
         }
+      } catch (err) {
+        return toolError(err.message);
+      }
+    }
+    case 'sentinel_blast_radius': {
+      // Read-only: build the repo graph, resolve the file inside repoDir,
+      // return blast radius. Any failure returns isError (never throws).
+      try {
+        const repoDir = args.repoDir;
+        if (typeof repoDir !== 'string' || repoDir === '') {
+          return toolError('sentinel_blast_radius needs repoDir as a non-empty string.');
+        }
+        let rel;
+        try {
+          rel = resolveRepoFile(repoDir, args.file);
+        } catch (err) {
+          return toolError(err.message);
+        }
+        let graph;
+        try {
+          graph = buildRepoGraph({ repoDir });
+        } catch (err) {
+          return toolError(err.message);
+        }
+        const line = Number.isInteger(args.line) ? args.line : undefined;
+        const result = blastRadius(graph, {
+          file: rel,
+          symbol: typeof args.symbol === 'string' && args.symbol !== '' ? args.symbol : undefined,
+          line,
+        });
+        return text({ ...result, stats: graph.stats });
       } catch (err) {
         return toolError(err.message);
       }

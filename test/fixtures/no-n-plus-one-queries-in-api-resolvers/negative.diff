@@ -5,3 +5,21 @@ index 1111111..2222222 100644
 @@ -1,3 +1,4 @@
 +const users = await db.users.findAll({ include: 'posts' });
 +return users;
+diff --git a/lib/receipts.mjs b/lib/receipts.mjs
+index 1111111..2222222 100644
+--- a/lib/receipts.mjs
++++ b/lib/receipts.mjs
+@@ -1,3 +1,7 @@
++for (const k of keys) {
++  out[k] = rec.findings;
++}
++return out;
+diff --git a/lib/example.mjs b/lib/example.mjs
+index 1111111..2222222 100644
+--- a/lib/example.mjs
++++ b/lib/example.mjs
+@@ -1,3 +1,5 @@
++// Do not write ids.map((id) => db.users.find(id)) here.
++for (const id of ids) {
++  out.push(id);
++}

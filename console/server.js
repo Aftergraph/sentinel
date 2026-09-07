@@ -41,6 +41,7 @@ import { createOrgStore } from '../lib/org-store.js';
 import { createEvidenceStore } from '../lib/evidence-store.js';
 import { sealEvidence, hashBody } from '../lib/evidence.js';
 import { createFinding } from '../lib/finding.js';
+import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -124,6 +125,24 @@ function resolveRequestId(req) {
   const first = Array.isArray(raw) ? raw[0] : raw;
   if (typeof first === 'string' && first.length > 0) return first;
   return randomUUID();
+}
+
+// Console security headers (L1, additive, deterministic). Applied via
+// res.setHeader before any writeHead so EVERY response path (JSON, 429,
+// static) carries them. Graph/context output is advisory and never enters
+// receipt hashes or verdict logic here.
+const CSP_VALUE = "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self'";
+function setSecurityHeaders(req, res) {
+  try {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy', CSP_VALUE);
+    if (req && req.socket && req.socket.encrypted) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+  } catch { /* never fail a request on headers */ }
 }
 
 function sendJson(res, code, obj) {
@@ -424,6 +443,47 @@ export function createConsoleServer(opts = {}) {
       receipt: json.receipt,
       review: json.review,
       checksPassed: json.checksPassed,
+    };
+  }
+
+  // Advisory blast-radius query (S2 slice 2, read-only). Same inside-repo
+  // escape rejection as the sentinel_blast_radius MCP tool: every failure
+  // surfaces as error JSON via HttpError (never throws past the handler).
+  // Output is ADVISORY and never enters receipt hashes or verdict logic.
+  function runBlastQuery(params) {
+    const repoDir = params.get('repoDir');
+    const file = params.get('file');
+    if (typeof repoDir !== 'string' || repoDir === '') throw new HttpError(400, 'missing repoDir');
+    if (typeof file !== 'string' || file === '') throw new HttpError(400, 'missing file');
+    let rel;
+    try {
+      rel = resolveRepoFile(repoDir, file);
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+    let graph;
+    try {
+      graph = buildRepoGraph({ repoDir });
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+    const symbol = params.get('symbol');
+    const lineRaw = params.get('line');
+    const lineNum = lineRaw != null && lineRaw !== '' ? Number(lineRaw) : undefined;
+    const result = blastRadius(graph, {
+      file: rel,
+      symbol: typeof symbol === 'string' && symbol !== '' ? symbol : undefined,
+      line: Number.isInteger(lineNum) ? lineNum : undefined,
+    });
+    return {
+      advisory: true,
+      note: 'blast-radius context is advisory only — never affects verdicts or receipts',
+      file: rel,
+      symbol: typeof symbol === 'string' && symbol !== '' ? symbol : null,
+      line: Number.isInteger(lineNum) ? lineNum : null,
+      files: result.files,
+      symbols: result.symbols,
+      stats: graph.stats,
     };
   }
 
@@ -1347,6 +1407,7 @@ export function createConsoleServer(opts = {}) {
     const requestId = resolveRequestId(req);
     const startedMs = Date.now();
     try { res.setHeader('X-Request-Id', requestId); } catch { /* never fail a request on tracing */ }
+    setSecurityHeaders(req, res);
     // Capture the outbound status for the trace line regardless of which
     // response path runs (sendJson, 429 fast-path, or static serving).
     let statusOut = 200;
@@ -1518,6 +1579,9 @@ export function createConsoleServer(opts = {}) {
       }
       if (method === 'PUT' && path === '/api/config') {
         return send(200, writeConfig(await readJson(req)));
+      }
+      if (method === 'GET' && path === '/api/context/blast') {
+        return send(200, runBlastQuery(url.searchParams));
       }
       if (path.startsWith('/api/')) return send(404, { error: 'not found' });
       if (method !== 'GET' && method !== 'HEAD') return send(404, { error: 'not found' });

@@ -44,7 +44,7 @@ function tamperFirstLine(file) {
   writeFileSync(file, `${lines.join('\n')}\n`);
 }
 
-test('mcp-health: tools/list exposes the 2 new read-only tools after the original 12', async () => {
+test('mcp-health: tools/list exposes read-only tools after the original 12', async () => {
   const res = await handleMessage({ jsonrpc: '2.0', id: 401, method: 'tools/list' });
   const names = res.result.tools.map((t) => t.name);
   const original12 = [
@@ -57,7 +57,8 @@ test('mcp-health: tools/list exposes the 2 new read-only tools after the origina
   assert.deepEqual(names.slice(0, 12), original12);
   assert.ok(names.includes('sentinel_health_verdicts'), 'missing sentinel_health_verdicts');
   assert.ok(names.includes('sentinel_ledger_verify'), 'missing sentinel_ledger_verify');
-  assert.equal(TOOLS.length, 14);
+  assert.ok(names.includes('sentinel_blast_radius'), 'missing sentinel_blast_radius');
+  assert.equal(TOOLS.length, 15);
   assert.ok(!names.some((n) => /fix|approve|push|write|exec|runLocal/i.test(n)), 'no write/exec tools');
 });
 

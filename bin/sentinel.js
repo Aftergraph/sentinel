@@ -31,6 +31,7 @@ import { ruleIdsForPack as cliRuleIdsForPack } from '../lib/rulepack.js';
 import { parsePolicy as parseCliPolicy } from '../lib/policy.js';
 import { createFinding as cliCreateFinding } from '../lib/finding.js';
 import { executePipeline as cliExecutePipeline } from '../lib/pipeline.js';
+import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
 
 // --- Additive helpers: policy-gated review + verify run (new flags only) ---
 
@@ -98,6 +99,7 @@ async function reviewWithPolicy({
   rulePackVersion, source, ledgerPath, noLedger = false, configPath,
   diffInput, headSha: explicitHeadSha, baseSha: explicitBaseSha, policyPath,
   override,
+  repoDir,
 }) {
   const localMode = diffInput != null && diffInput !== '';
   if (!pr && !localMode) {
@@ -132,6 +134,17 @@ async function reviewWithPolicy({
     process.exit(2);
   }
 
+  // Advisory blast-radius graph (S2 slice 2): read-only walk of --repo-dir
+  // for human/json context lines only. Failures warn and continue WITHOUT
+  // context — the policy verdict and receipt paths never see this data.
+  let blastGraph = null;
+  if (repoDir != null && repoDir !== '') {
+    try {
+      blastGraph = buildRepoGraph({ repoDir });
+    } catch (err) {
+      console.error(`sentinel: warn: blast context unavailable (${err.message}); continuing without it`);
+    }
+  }
   const resolvedSource = source || receiptDetectSource();
   if (!SOURCE_ENUM.includes(resolvedSource)) {
     throw new Error(`Unsupported source: ${resolvedSource} (expected one of ${SOURCE_ENUM.join(', ')})`);
@@ -259,7 +272,7 @@ async function reviewWithPolicy({
     if (format === 'sarif') {
       console.log(JSON.stringify(reviewToSarif(res), null, 2));
     } else if (format === 'json') {
-      const out = reviewToJson(res, { repo, prNumber: pr, ...extra });
+      const out = reviewToJson(res, { repo, prNumber: pr, blastGraph, ...extra });
       out.policyEvaluation = res.policyEvaluation;
       // Additive: verdict-override surface (present only when overridden).
       if (res.overridden) {
@@ -274,7 +287,7 @@ async function reviewWithPolicy({
     } else {
       console.log(reviewFormatHuman(res, {
         summary: extra.summary, delta: extra.delta, receipt: extra.receipt,
-        staleReason: extra.staleReason, color: useColor,
+        staleReason: extra.staleReason, color: useColor, blastGraph,
       }) + `\n${policyLine}`);
     }
   }
@@ -282,12 +295,51 @@ async function reviewWithPolicy({
   process.exit(result.verdict === 'SHIP' ? 0 : 1);
 }
 
+// context blast-radius --repo-dir <dir> --file <path> [--symbol <name>] [--line <n>]:
+// build the repo symbol graph and report the blast radius of a file/symbol.
+// Read-only: walks the checkout, executes nothing. --format json emits the
+// machine-readable { files, symbols, stats } object.
 // verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile>:
 // execute the verify pipeline with a caller-supplied command table.
 // Unknown/misconfigured check types fail closed (exit 2) pre-exec — the
 // pipeline itself guarantees nothing executes. Human output prints the run
 // id, per-check PASS/FAIL/TIMEOUT, the finding transition, and sealed
 // evidence ids; --format json emits the same machine-readably.
+async function contextBlastRadiusCommand({ repoDir, file, symbol, line, format = 'human' }) {
+  if (format !== 'human' && format !== 'json') {
+    console.error(`Error: context blast-radius --format must be human or json (got "${format}")`);
+    process.exit(1);
+  }
+  if (!repoDir || !file) {
+    console.error('Usage: sentinel context blast-radius --repo-dir <dir> --file <path> [--symbol <name>] [--line <n>] [--format human|json]');
+    process.exit(1);
+  }
+  let rel;
+  try {
+    rel = resolveRepoFile(repoDir, file);
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+  let graph;
+  try {
+    graph = buildRepoGraph({ repoDir });
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+  const result = blastRadius(graph, { file: rel, symbol: symbol || undefined, line });
+  const out = { ...result, stats: graph.stats };
+  if (format === 'json') {
+    console.log(JSON.stringify(out));
+  } else {
+    console.log(`Blast radius of ${rel}${symbol ? ` (${symbol})` : ''}: ${result.files.length} file(s)`);
+    for (const f of result.files) console.log(`  ${f}`);
+    if (graph.stats.truncated) console.log(`Note: repo walk truncated at ${graph.stats.maxFiles} files.`);
+  }
+  process.exit(0);
+}
+
 async function verifyRunCommand({ finding: findingSpec, repoDir, commands: commandsPath, format = 'human' }) {
   if (format !== 'human' && format !== 'json') {
     console.error(`Error: verify run --format must be human or json (got "${format}")`);
@@ -391,6 +443,7 @@ Usage:
   sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
   sentinel review --diff <file|-> --repo a/b --override SHIP|DO_NOT_SHIP --override-reason <text> [--override-actor <name>]
   sentinel verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile> [--format human|json]
+  sentinel context blast-radius --repo-dir <dir> --file <path> [--symbol <name>] [--line <n>] [--format human|json]
   sentinel --help
 
 Exit codes (contract, never silently changed):
@@ -479,6 +532,8 @@ try {
     finding: { type: 'string' },
     'repo-dir': { type: 'string' },
     commands: { type: 'string' },
+    symbol: { type: 'string' },
+    line: { type: 'string' },
     help: { type: 'boolean', default: false },
     version: { type: 'boolean', default: false },
   }
@@ -515,6 +570,7 @@ try {
       baseSha: values['base-sha'] || undefined,
       policyPath: values.policy,
       override: cliOverrideFromFlags(values) || undefined,
+      repoDir: values['repo-dir'] || undefined,
     });
   } else if (cmd === 'review') {
     const localMode = values.diff != null && values.diff !== '';
@@ -548,6 +604,7 @@ try {
       headSha: values['head-sha'] || undefined,
       baseSha: values['base-sha'] || undefined,
       override: cliOverrideFromFlags(values) || undefined,
+      repoDir: values['repo-dir'] || undefined,
     });
   } else if (cmd === 'serve') {
     const host = values.host || '127.0.0.1';
@@ -600,6 +657,14 @@ try {
       finding: values.finding,
       repoDir: values['repo-dir'],
       commands: values.commands,
+      format: values.format,
+    });
+  } else if (cmd === 'context' && positionals[1] === 'blast-radius') {
+    await contextBlastRadiusCommand({
+      repoDir: values['repo-dir'],
+      file: values.file,
+      symbol: values.symbol,
+      line: values.line != null && values.line !== '' ? parseInt(values.line, 10) : undefined,
       format: values.format,
     });
   } else if (cmd === 'verify') {

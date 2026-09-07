@@ -88,7 +88,8 @@ code { color: var(--cyan); }
 /* Structural skeletons for >300ms loads: opacity pulse only
    (compositor prop, fixed-height rows, never layout-shifting). */
 .sk { border-radius: var(--radius); margin: 8px 0; background: var(--panel);
-  border: 1px solid var(--line); animation: pulse 1.2s ease-out infinite; }
+  border: 1px solid var(--line); animation: pulse 1.2s ease-out infinite;
+  height: 44px; }
 @keyframes pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {
   .sk { animation: none; }

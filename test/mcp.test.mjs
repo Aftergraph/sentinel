@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -84,6 +84,49 @@ test('mcp: PR mode validates pr is an integer (no gh spawn)', async () => {
   });
   assert.equal(res.result.isError, true);
   assert.ok(JSON.parse(res.result.content[0].text).error.includes('integer'));
+});
+
+test('mcp: sentinel_blast_radius walks a checkout, rejects escapes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-mcp-graph-'));
+  try {
+    writeFileSync(join(dir, 'a.js'), `import { b } from './b.js';\nexport const a = b();\n`);
+    writeFileSync(join(dir, 'b.js'), `export function b() { return 1; }\n`);
+    const ok = await handleMessage({
+      jsonrpc: '2.0', id: 10, method: 'tools/call',
+      params: { name: 'sentinel_blast_radius', arguments: { repoDir: dir, file: 'b.js', symbol: 'b' } },
+    });
+    assert.equal(ok.result.isError ?? false, false);
+    assert.deepEqual(JSON.parse(ok.result.content[0].text).files, ['a.js', 'b.js']);
+    const esc = await handleMessage({
+      jsonrpc: '2.0', id: 11, method: 'tools/call',
+      params: { name: 'sentinel_blast_radius', arguments: { repoDir: dir, file: '../evil.js' } },
+    });
+    assert.equal(esc.result.isError, true);
+    const missing = await handleMessage({
+      jsonrpc: '2.0', id: 12, method: 'tools/call',
+      params: { name: 'sentinel_blast_radius', arguments: {} },
+    });
+    assert.equal(missing.result.isError, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mcp: sentinel_blast_radius works over Python files', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-mcp-graph-py-'));
+  try {
+    mkdirSync(join(dir, 'pkg'), { recursive: true });
+    writeFileSync(join(dir, 'pkg', 'a.py'), `from .b import thing\nx = thing()\n`);
+    writeFileSync(join(dir, 'pkg', 'b.py'), `def thing():\n return 1\n`);
+    const ok = await handleMessage({
+      jsonrpc: '2.0', id: 13, method: 'tools/call',
+      params: { name: 'sentinel_blast_radius', arguments: { repoDir: dir, file: 'pkg/b.py', symbol: 'thing' } },
+    });
+    assert.equal(ok.result.isError ?? false, false);
+    assert.deepEqual(JSON.parse(ok.result.content[0].text).files, ['pkg/a.py', 'pkg/b.py']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('mcp: rules list carries severities + blocking flags', async () => {

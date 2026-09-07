@@ -31,7 +31,7 @@ function toast(msg, isErr) {
 }
 
 function skeleton(rows) {
-  return Array.from({ length: rows }, () => '<div class="sk" style="height:44px" aria-hidden="true"></div>').join('');
+  return Array.from({ length: rows }, () => '<div class="sk" aria-hidden="true"></div>').join('');
 }
 
 function errBox(msg, retry) {
@@ -588,6 +588,58 @@ async function vVerify(q) {
   verifyTimer = setInterval(() => loadVerifyRun(run, out), 2000);
 }
 
+// Context view: read-only advisory blast-radius over GET
+// /api/context/blast (S2 slice 2). Follows the existing view pattern:
+// form -> hash params -> skeleton -> api() -> esc()'d HTML. Every
+// interpolated value goes through esc(); statuses render icon+label+text.
+function contextHtml(r) {
+  const files = Array.isArray(r.files) ? r.files : [];
+  const symbols = Array.isArray(r.symbols) ? r.symbols : [];
+  const stats = r.stats && typeof r.stats === 'object' ? r.stats : null;
+  const filesHtml = files.length === 0 ? '<p class="dim">No other files in scope.</p>'
+    : '<ul class="queue">' + files.map((f) => `<li><code>${esc(f)}</code></li>`).join('') + '</ul>';
+  const symbolsHtml = symbols.length === 0 ? '<p class="dim">No symbols in scope.</p>'
+    : '<ul class="queue">' + symbols.map((s) =>
+      `<li><code>${esc(s.file)}${s.name ? ' :: ' + esc(s.name) : ''}</code></li>`).join('') + '</ul>';
+  return `<p><span class="pill info">● advisory</span> <code>${esc(r.file || '')}</code>` +
+    (r.symbol ? ` <span class="dim">symbol <code>${esc(r.symbol)}</code></span>` : '') +
+    (r.line != null ? ` <span class="dim">line <code>${esc(String(r.line))}</code></span>` : '') + `</p>` +
+    (r.note ? `<p class="dim">${esc(r.note)}</p>` : '') +
+    `<section aria-label="Affected files"><h3>Affected files (${files.length})</h3>${filesHtml}</section>` +
+    `<section aria-label="Symbols"><h3>Symbols (${symbols.length})</h3>${symbolsHtml}</section>` +
+    (stats ? `<p class="dim">scanned ${esc(String(stats.scanned ?? '?'))} file(s)` +
+      (stats.truncated ? ` · walk truncated at ${esc(String(stats.maxFiles ?? '?'))}` : '') + `</p>` : '');
+}
+
+async function vContext(q) {
+  const repoDir = q.get('repoDir') || '';
+  const file = q.get('file') || '';
+  const symbol = q.get('symbol') || '';
+  const line = q.get('line') || '';
+  el.innerHTML = `<h2>Context</h2>
+    <p class="dim">Advisory blast-radius — what a file or symbol touches. Never affects verdicts or receipts.</p>
+    <div class="row"><div><label for="cr">Repository directory</label><input id="cr" placeholder="/path/to/checkout" value="${esc(repoDir)}" autocomplete="off"></div><div><label for="cf">File (repo-relative)</label><input id="cf" placeholder="lib/review.js" value="${esc(file)}" autocomplete="off"></div><div><label for="cs">Symbol (optional)</label><input id="cs" placeholder="formatHuman" value="${esc(symbol)}" autocomplete="off"></div><div><label for="cl">Line (optional)</label><input id="cl" placeholder="333" value="${esc(line)}" inputmode="numeric"></div><button id="go">Load</button></div><div id="out"></div>`;
+  focusContent();
+  document.getElementById('go').onclick = () => {
+    const parts = [`repoDir=${encodeURIComponent(document.getElementById('cr').value)}`, `file=${encodeURIComponent(document.getElementById('cf').value)}`];
+    const s = document.getElementById('cs').value.trim();
+    const l = document.getElementById('cl').value.trim();
+    if (s) parts.push(`symbol=${encodeURIComponent(s)}`);
+    if (l) parts.push(`line=${encodeURIComponent(l)}`);
+    location.hash = `#/context?${parts.join('&')}`;
+  };
+  if (!repoDir || !file) return;
+  const out = document.getElementById('out');
+  out.innerHTML = skeleton(3);
+  try {
+    let target = `/api/context/blast?repoDir=${encodeURIComponent(repoDir)}&file=${encodeURIComponent(file)}`;
+    if (symbol) target += `&symbol=${encodeURIComponent(symbol)}`;
+    if (line) target += `&line=${encodeURIComponent(line)}`;
+    out.innerHTML = contextHtml(await api('GET', target));
+    toast('Context loaded');
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
 el.addEventListener('click', async (e) => {
   const retry = e.target.closest('button[data-retry]');
   if (retry) { route(); return; }
@@ -619,7 +671,13 @@ async function route() {
   if (path === '/pr') return vPR(q);
   if (path === '/finding') return vFinding(q);
   if (path === '/verify') return vVerify(q);
+  if (path === '/context') return vContext(q);
   return vBoard();
 }
 window.addEventListener('hashchange', route);
 route();
+// Service-worker registration lives here (not inline in index.html) so the
+// console can serve a strict script-src 'self' Content-Security-Policy.
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
