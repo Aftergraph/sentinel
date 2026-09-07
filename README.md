@@ -25,27 +25,47 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/decisions.md` | Locked decisions + what needs owner approval |
 | `docs/todo.md` | Prototype-first backlog, no code yet |
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
+| `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
+| `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
+| `docs/mcp.md` | MCP server tools (8, read-only) + client setup |
+| `docs/receipts-v0.1.md` | Receipt/ledger format + `verify` contract |
+| `docs/console-v1-design.md` | Console API contract (route table) + views |
+| `docs/console-v1b.md` | Org-wide topology/org-state flags |
+| `docs/rulepack-v1.2.md` | Current rule pack (21 rules) + deliberately-excluded rule |
+| `docs/vision-software-verification-platform.md` | Platform vision |
+| `docs/roadmap-S0-S10.md` | S0–S10 roadmap (org policies at S5) |
+| `docs/cloudflare.md` | Cloudflare hosting path |
 
 ## CLI quickstart
 
 ```
 npm install -g @aftergraph/sentinel   # Node >= 20, no build step
-sentinel review --pr 42               # human verdict, exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
+sentinel review --pr 42               # [VERIFY]/manual — needs gh auth + network; exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
 sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
-sentinel review --pr 42 --rule-pack 1.0.0  # pinned original 6-rule pack
+sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules, 1.2.0: 21, default)
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
-sentinel --help
+git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
+sentinel verify run --finding <ruleId:file:line> --repo-dir . --commands ./commands.json  # isolated verify run (docs/pipeline.md)
+sentinel resolve --rule-id <id> --file <path> --reason <text>  # silence a finding (memory)
+sentinel --help                       # every flag documented; output matches this file
 ```
 
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
+Full suite: `npm test` — 288 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
+
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
-`docs/mcp.md`), `apps/github` (S1 webhook → verdict card, mocked tests),
-and the platform vision (`docs/vision-software-verification-platform.md`,
+`docs/mcp.md`), policy-gated review (`review --policy`, `docs/policy.md`),
+isolated verify runs (`verify run`, `docs/pipeline.md`),
+`apps/github` (S1 webhook → verdict card [VERIFY]/manual — needs App install
++ webhook delivery; tests mocked — plus check-runs transport via `gh api`
+[VERIFY]/manual, see `apps/github/README.md`), and the platform vision
+(`docs/vision-software-verification-platform.md`,
 `docs/roadmap-S0-S10.md`, Cloudflare hosting in `docs/cloudflare.md`).
 
 ## Console (local web UI, PWA-ready)
@@ -53,6 +73,7 @@ and the platform vision (`docs/vision-software-verification-platform.md`,
 ```
 node bin/sentinel.js serve --port 8787
 # open http://127.0.0.1:8787 in a browser
+node bin/sentinel.js serve --topology platform-topology.json --org-state latest-org-state.json  # org-wide rows (docs/console-v1b.md)
 ```
 
 Board, run, rules, config, ledger views over the same verdict engine —

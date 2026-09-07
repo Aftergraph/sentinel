@@ -54,6 +54,18 @@ across repos (board view).
 | `GET /api/rules` | — | `{pack, rules: [{id, severity, blocks}]}` | — |
 | `GET /api/config` | — | `{config, configHash, path?}` | — |
 | `PUT /api/config` | full `{rulePack?, exclude[]}` | `{configHash}` | 400 fail-closed (same rules as `loadConfig`) |
+| `GET /api/overview` (`?org=` with store) | — | `{confidence, open, blocked, stale, critical, needsAttention, recentVerdicts}` (display roll-up over ledger + topology rows) | — |
+| `GET /api/pr/:repo/:pr` (`?head=`) | path | PR-detail record: verdict, blocking/nonBlocking/silenced (severity/blocking recomputed from `lib/rulepack`), counts, receipt, sealed-evidence refs, receipt-chain activity; `stale` is pure head-drift vs `?head=` | 400 malformed path, 404 no record |
+| `GET /api/finding/:repo/:pr/:rule/:line` (`?head=`) | path | finding detail (latest receipt) + per-receipt history for that rule+line | 400 malformed path/line, 404 no record or no such finding |
+| `POST /api/verify/start` | `{repo, prNumber\|pr, ruleId, line}` | in-memory planned run (`VR-0001…`, `PENDING`, checks via `planChecks`); runs never advance server-side, kept unbounded in-process, lost on restart. See `docs/pipeline.md` | 400 bad input, 404 unknown repo+PR/finding |
+| `GET /api/verify/:id` | path | run view: checks, `progress.done/total`, `evidenceIds`, ledger-head `stale`/`staleReason` | 404 no such run |
+| `GET /api/orgs`, `GET /api/orgs/:id/repos` | — | org list / linked-repo rows enriched like `/api/repos` (display only, never mutated) | 404 without programmatic `orgStorePath` (incl. plain `sentinel serve` — no `--org-store` CLI flag exists); 400 malformed / 404 unknown org id |
+
+`GET /api/repos` and `GET /api/overview` accept `?org=` only when the
+server was constructed with the programmatic `orgStorePath` option
+(`lib/org-store.js` file); otherwise the parameter is ignored (v1a shapes
+byte-identical), and malformed/unknown org ids answer 400 (never 404, so
+org existence cannot be confused with a missing route).
 
 All timestamps ISO8601 UTC. All errors `{error: string}` with no stack
 leaks. POST routes validate `Content-Type: application/json`.

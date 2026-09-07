@@ -10,11 +10,14 @@ as the CLI (`analyzeDiff`, same rule packs).
 
 | Tool | Input | Output |
 |---|---|---|
-| `sentinel_review` | `diff` (or `repo`+`pr` via `gh`), `headSha?`, `rulePack?`, `exclude[]?` | verdict, blocking/nonBlocking/excluded, summary |
+| `sentinel_review` | `diff` (or `repo`+`pr` via `gh` [VERIFY]/manual — needs `gh` auth + network), `headSha?`, `rulePack?`, `exclude[]?` | verdict, blocking/nonBlocking/excluded, summary |
 | `sentinel_rules_list` | `pack?` | id, severity, blocks-flag per rule |
 | `sentinel_verdict_latest` | `repo`, `pr`, `ledgerPath?` | latest receipt or null |
 | `sentinel_receipt_verify` | `receipt` | VALID/INVALID offline |
 | `sentinel_config_show` | `path?` | validated config (read-only) |
+| `sentinel_finding_lifecycle` | `finding?`, `action: validate-transition\|list-states`, `to?`, `reason?`, `actor?` | states, transitions, allowed-next; legality check (ai may not transition; DISMISSED needs a reason). Read-only, never mutates |
+| `sentinel_verify_plan` | `ruleId`, `severity?` | severity + planned checks via `planChecks` (read-only, never executes) |
+| `sentinel_policy_evaluate` | `policyText`, `repo?`, `path?`, `findings?`, `checks?`, `headSha?` | parse + scope-resolve + evaluate (`allowed`, `verdict`, `reasons`, `policyVersion`); malformed input returns `isError`, never throws. See `docs/policy.md` |
 
 No fix, approve, push, or write tool exists — `decisions.md` #4 holds for
 agents too. `fix.submit` arrives only if the owner reverses #4.

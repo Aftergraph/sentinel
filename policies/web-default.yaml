@@ -1,0 +1,20 @@
+# Minimal working policy — validated with:
+# node -e "import('./lib/policy.js').then(async (m) => {
+#   const { readFileSync } = await import('node:fs');
+#   const p = m.parsePolicy(readFileSync(process.argv[1], 'utf8'));
+#   console.log('OK', p.policyVersion);
+# })" policies/web-default.yaml
+# -> web-default@33d1887f79e34300
+apiVersion: sentinel.aftergraph/v1
+kind: VerificationPolicy
+metadata:
+  name: web-default
+spec:
+  scope:
+    repo: acme/web
+    paths: []
+  required: []
+  blocking_severity:
+    - security
+  approvals:
+    required: []
