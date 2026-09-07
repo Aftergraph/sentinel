@@ -31,6 +31,7 @@ const RULES = [
   'no-console-log-in-server-diff',
   'require-retry-with-backoff-for-transient-failures',
   'require-health-check-before-traffic-shift',
+  'require-foreign-key-constraints-on-related-tables',
 ];
 
 for (const ruleId of RULES) {

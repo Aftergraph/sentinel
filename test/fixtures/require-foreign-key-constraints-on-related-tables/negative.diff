@@ -1,0 +1,26 @@
+diff --git a/db/migrations/051_payments.sql b/db/migrations/051_payments.sql
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/db/migrations/051_payments.sql
+@@ -0,0 +1,7 @@
++CREATE TABLE payments (
++  id BIGSERIAL PRIMARY KEY,
++  order_id BIGINT NOT NULL REFERENCES orders (id),
++  amount_cents INTEGER NOT NULL
++);
++-- user_id BIGINT, -- deferred to change 052
++SELECT 1;
+diff --git a/db/migrations/052_events.sql b/db/migrations/052_events.sql
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/db/migrations/052_events.sql
+@@ -0,0 +1,7 @@
++CREATE TABLE events (
++  id BIGSERIAL PRIMARY KEY,
++  subject_id UUID NOT NULL,
++  subject_type TEXT NOT NULL,
++  payload JSONB
++);
++SELECT 1;

@@ -1,5 +1,5 @@
 {
-  "pack": "1.4.0",
+  "pack": "1.5.0",
   "results": [
     {
       "case": "clean-eval-negative",
@@ -59,6 +59,21 @@
       "expected": [
         "no-destructive-migration-without-backup-verification",
         "no-destructive-sql-without-guard"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "data-foreign-key",
+      "fired": [
+        "no-unindexed-schema-migration-on-large-tables",
+        "require-foreign-key-constraints-on-related-tables"
+      ],
+      "expected": [
+        "no-unindexed-schema-migration-on-large-tables",
+        "require-foreign-key-constraints-on-related-tables"
       ],
       "hit": true,
       "strict": true,
@@ -230,11 +245,13 @@
     "recall": 1,
     "precision": 1,
     "fpPerCase": 0,
-    "cases": 18,
+    "cases": 19,
     "rulesFired": {
       "require-strict-equality": 1,
       "no-destructive-migration-without-backup-verification": 1,
       "no-destructive-sql-without-guard": 1,
+      "no-unindexed-schema-migration-on-large-tables": 1,
+      "require-foreign-key-constraints-on-related-tables": 1,
       "require-where-on-delete-update": 1,
       "no-unauthenticated-api-endpoints": 2,
       "no-unbounded-list-query-without-pagination": 2,

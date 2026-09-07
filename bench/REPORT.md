@@ -1,6 +1,6 @@
-# SentinelBench report — pack `1.4.0`
+# SentinelBench report — pack `1.5.0`
 
-- cases: 18
+- cases: 19
 - recall: 1
 - precision: 1
 - false positives per case: 0
@@ -13,6 +13,7 @@
 | clean-sync-io-negative | yes | yes | — | — |
 | correctness-strict-equality | yes | yes | require-strict-equality | require-strict-equality |
 | data-destructive-sql | yes | yes | no-destructive-migration-without-backup-verification, no-destructive-sql-without-guard | no-destructive-migration-without-backup-verification, no-destructive-sql-without-guard |
+| data-foreign-key | yes | yes | no-unindexed-schema-migration-on-large-tables, require-foreign-key-constraints-on-related-tables | no-unindexed-schema-migration-on-large-tables, require-foreign-key-constraints-on-related-tables |
 | data-where-on-delete | yes | yes | require-where-on-delete-update | require-where-on-delete-update |
 | overlap-unauthenticated-route | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |
 | overlap-unbounded-list | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |

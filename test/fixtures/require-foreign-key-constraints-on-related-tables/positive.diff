@@ -1,0 +1,12 @@
+diff --git a/db/migrations/050_orders.sql b/db/migrations/050_orders.sql
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/db/migrations/050_orders.sql
+@@ -0,0 +1,6 @@
++CREATE TABLE orders (
++  id BIGSERIAL PRIMARY KEY,
++  user_id BIGINT NOT NULL,
++  total_cents INTEGER NOT NULL
++);
++CREATE INDEX idx_orders_user ON orders (user_id);
