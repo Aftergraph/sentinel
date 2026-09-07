@@ -29,6 +29,7 @@ const RULES = [
   'require-strict-equality',
   'no-var-instead-of-let-const',
   'no-console-log-in-server-diff',
+  'require-retry-with-backoff-for-transient-failures',
 ];
 
 for (const ruleId of RULES) {

@@ -15,7 +15,7 @@ Review is read-only by construction (ledger + stdout are local).
 | File | One-line contract | Key exports |
 |---|---|---|
 | `lib/review.js` | Diff/PR → findings → verdict + receipt; exit-code contract 0 SHIP / 1 DO_NOT_SHIP / 2 STALE | `review`, `analyzeDiff`, `computeVerdict`, `checkFreshness`, `computeDelta`, `resolveFinding`, `toSarif`, `toGov`, `GOV_CONTRACT`, `VALID_FORMATS`, `VERDICT_STRICTNESS`, `loadConfig`, `filterExcluded` |
-| `lib/rulepack.js` | Single source of truth: rule IDs, severities, pack versions, blocking set | `RULE_PACK_VERSION` (`1.2.0`), `SUPPORTED_PACKS` (`1.0.0\|1.1.0\|1.2.0`), `RULE_IDS_BY_PACK`, `SEVERITY_MAP`, `BLOCKING_SEVERITIES`, `ruleIdsForPack` |
+| `lib/rulepack.js` | Single source of truth: rule IDs, severities, pack versions, blocking set | `RULE_PACK_VERSION` (`1.3.0`), `SUPPORTED_PACKS` (`1.0.0\|1.1.0\|1.2.0\|1.3.0`), `RULE_IDS_BY_PACK`, `SEVERITY_MAP`, `BLOCKING_SEVERITIES`, `ruleIdsForPack` |
 | `lib/finding.js` | ENGINE S1 finding lifecycle state machine; actor `ai` may never transition | `HYPOTHESIS`, `VERIFYING`, `CONFIRMED`, `NOT_REPRODUCED`, `INDETERMINATE`, `DISMISSED`, `TERMINAL_STATES`, `createFinding`, `transition`, `setAiConfidence`, `isTerminal` |
 | `lib/audit.js` | ENGINE S1 append-only in-memory event log, monotonic `seq` | `append` (+ aliases `appendEvent`, `appendAudit`), `list` (+ aliases), `clear` (+ aliases `reset`, `clearEvents`, `clearAudit`) |
 | `lib/verify.js` | ENGINE S3 deterministic finding→checks planner + run lifecycle; closed set of 8 check types | `CHECK_TYPES` (BUILD, TEST, TYPECHECK, LINT, STATIC_ANALYSIS, SECRET_SCAN, CONTRACT_TEST, POLICY_CHECK), `PENDING/RUNNING/PASS/FAIL`, `planChecks`, `createRun`, `startRun`, `completeRun`, `severityOf` |
@@ -33,7 +33,7 @@ Review is read-only by construction (ledger + stdout are local).
 `_diff-parse.js` is the shared unified-diff parser (not a rule).
 `no-swallowed-exceptions-in-critical-path.js` ships in-tree but is in
 **no pack** by design (name promises critical-path scoping the regex
-cannot deliver). Pack sizes: 1.0.0 = 6, 1.1.0 = 20, 1.2.0 = 21
+cannot deliver). Pack sizes: 1.0.0 = 6, 1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22
 (pinned by `test/cli-contract.test.mjs`).
 
 | Rule | Severity | Fires on |
@@ -52,6 +52,7 @@ cannot deliver). Pack sizes: 1.0.0 = 6, 1.1.0 = 20, 1.2.0 = 21
 | `no-destructive-sql-without-guard` | data | Destructive SQL without guard |
 | `require-where-on-delete-update` | data | `DELETE`/`UPDATE` without `WHERE` |
 | `no-destructive-migration-without-backup-verification` | data | Destructive migration without backup ref (v1.2.0 addition) |
+| `require-retry-with-backoff-for-transient-failures` | reliability | `.catch()` re-invocation with no delay (v1.3.0 addition) |
 | `no-n-plus-one-queries-in-api-resolvers` | performance | N+1 query pattern in resolvers |
 | `require-dataloader-or-eager-load-for-nested-fetches` | performance | Nested fetch without dataloader/eager load |
 | `no-unbounded-list-query-without-pagination` | performance | List route/query without pagination |
@@ -68,7 +69,7 @@ reliability, correctness, data, performance).
 
 Commands (verified via `bin/sentinel.js --help`): `review`
 (`--pr` | `--diff`, `--format human|json|sarif|gov`,
-`--rule-pack 1.0.0|1.1.0|1.2.0`, `--policy`, `--override
+`--rule-pack 1.0.0|1.1.0|1.2.0|1.3.0`, `--policy`, `--override
 SHIP|DO_NOT_SHIP` + `--override-reason`, `--source`, `--ledger-path`,
 `--no-ledger`, `--config`, `--memory-path`), `serve` (`--port 8787`,
 `--host 127.0.0.1`, `--repo`, `--token`, `--ledger-path`,

@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-retry-with-backoff-for-transient-failures/positive.diff", "expect": ["require-retry-with-backoff-for-transient-failures"], "name": "reliability-retry-backoff", "severity": "reliability"}

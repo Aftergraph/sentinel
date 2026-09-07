@@ -412,7 +412,7 @@ Receipts:
   offline: no network, no trust required.
 
 Config (sentinel.config.json in cwd, or --config):
-  { "rulePack": "1.2.0", "exclude": ["docs/**", "*.md"] }
+  { "rulePack": "1.3.0", "exclude": ["docs/**", "*.md"] }
   Excluded findings are reported, never block. Malformed config fails closed.
 
 Console v1b (org-wide, display-only — see docs/console-v1b.md):

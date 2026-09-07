@@ -1,6 +1,6 @@
-# SentinelBench report — pack `1.2.0`
+# SentinelBench report — pack `1.3.0`
 
-- cases: 16
+- cases: 17
 - recall: 1
 - precision: 1
 - false positives per case: 0
@@ -19,6 +19,7 @@
 | performance-n-plus-one | yes | yes | no-n-plus-one-queries-in-api-resolvers | no-n-plus-one-queries-in-api-resolvers |
 | reliability-lockfile | yes | yes | require-lockfile-update-with-manifest-change | require-lockfile-update-with-manifest-change |
 | reliability-process-exit | yes | yes | no-process-exit-in-server-code | no-process-exit-in-server-code |
+| reliability-retry-backoff | yes | yes | require-retry-with-backoff-for-transient-failures | require-retry-with-backoff-for-transient-failures |
 | security-eval | yes | yes | no-eval-with-dynamic-input | no-eval-with-dynamic-input |
 | security-private-key | yes | yes | no-private-key-in-diff | no-private-key-in-diff |
 | style-console-log | yes | yes | no-console-log-in-server-diff | no-console-log-in-server-diff |

@@ -31,14 +31,10 @@ test('security: ghApiArgv builds shell-free argv and rejects injection', () => {
 
 test('security: review() with evil repo throws before any exec', async () => {
   const canary = join(tmpdir(), 'sentinel-pwned');
-  try {
-    await assert.rejects(
-      review({ pr: 1, repo: 'a/b;touch ' + canary, diffText: undefined }),
-      /owner\/name/,
-    );
-  } catch (err) {
-    if (!/owner\/name/.test(err.message)) throw err;
-  }
+  await assert.rejects(
+    review({ pr: 1, repo: 'a/b;touch ' + canary, diffText: undefined }),
+    /owner\/name/,
+  );
   assert.equal(existsSync(canary), false, 'no shell ever ran');
 });
 

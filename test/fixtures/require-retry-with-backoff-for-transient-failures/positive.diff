@@ -1,0 +1,18 @@
+diff --git a/src/api/client.js b/src/api/client.js
+index 1111111..2222222 100644
+--- a/src/api/client.js
++++ b/src/api/client.js
+@@ -1,3 +1,5 @@
+ export function loadUser(id) {
++  return fetch(`/api/users/${id}`).catch(() => fetch(`/api/users/${id}`));
+   return null;
+ }
+diff --git a/src/sync/worker.js b/src/sync/worker.js
+index 3333333..4444444 100644
+--- a/src/sync/worker.js
++++ b/src/sync/worker.js
+@@ -1,3 +1,5 @@
+ export function start() {
++  connect().catch(retry);
+   return true;
+ }

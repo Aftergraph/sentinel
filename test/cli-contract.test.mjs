@@ -15,10 +15,11 @@ import {
   ruleIdsForPack,
 } from '../lib/rulepack.js';
 
-test('rulepack: v1.0.0 locks 6, v1.1.0 locks 20, default pack carries 21', () => {
+test('rulepack: v1.0.0 locks 6, v1.1.0 locks 20, v1.2.0 locks 21, default pack carries 22', () => {
   assert.equal(ruleIdsForPack('1.0.0').length, 6);
   assert.equal(ruleIdsForPack('1.1.0').length, 20);
-  assert.equal(ruleIdsForPack(RULE_PACK_VERSION).length, 21);
+  assert.equal(ruleIdsForPack('1.2.0').length, 21);
+  assert.equal(ruleIdsForPack(RULE_PACK_VERSION).length, 22);
   assert.ok(SUPPORTED_PACKS.includes('1.0.0'));
   assert.ok(SUPPORTED_PACKS.includes(RULE_PACK_VERSION));
   assert.throws(() => ruleIdsForPack('9.9.9'), /Unsupported rule pack/);
@@ -35,7 +36,8 @@ test('loadRules: pack versions resolve to matching rule counts', async () => {
   const v11 = await loadRules(RULE_PACK_VERSION);
   assert.equal(v10.length, 6);
   assert.equal((await loadRules('1.1.0')).length, 20);
-  assert.equal(v11.length, 21);
+  assert.equal((await loadRules('1.2.0')).length, 21);
+  assert.equal(v11.length, 22);
   await assert.rejects(() => loadRules('9.9.9'), /Unsupported rule pack/);
 });
 
@@ -65,7 +67,7 @@ test('verdict: checksPassed follows the requested pack', () => {
   const r10 = computeVerdict([], new Set(), { headSha: 'h', baseSha: 'b', rulePackVersion: '1.0.0' });
   const r11 = computeVerdict([], new Set(), { headSha: 'h', baseSha: 'b', rulePackVersion: RULE_PACK_VERSION });
   assert.equal(r10.checksPassed, 6);
-  assert.equal(r11.checksPassed, 21);
+  assert.equal(r11.checksPassed, 22);
 });
 
 test('toJson: Review + Verdict + Findings shape per data-model-v0', () => {
@@ -83,7 +85,7 @@ test('toJson: Review + Verdict + Findings shape per data-model-v0', () => {
   assert.equal(json.verdict.decision, 'DO_NOT_SHIP');
   assert.equal(json.findings.blocking.length, 1);
   assert.ok(Array.isArray(json.findings.nonBlocking));
-  assert.equal(json.checksPassed, 21);
+  assert.equal(json.checksPassed, 22);
 });
 
 test('toSarif: style maps to note, correctness maps to error', () => {

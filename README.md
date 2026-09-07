@@ -2,7 +2,7 @@
 
 **Product core:** Sentinel by Aftergraph is a verified code-review product that turns pull requests into merge-ready verdicts.
 
-**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.2.0: 21 deterministic rules, see `docs/rulepack-v1.2.md`).
+**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.3.0: 22 deterministic rules, see `docs/rulepack-v1.3.md`).
 
 ## Why Sentinel exists
 
@@ -46,7 +46,7 @@ sentinel review --pr 42               # [VERIFY]/manual — needs gh auth + netw
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
 sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
-sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules, 1.2.0: 21, default)
+sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules, 1.2.0: 21, 1.3.0: 22, default)
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
 git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
@@ -59,8 +59,8 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 414 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
-1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
+Full suite: `npm test` — 443 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
 `docs/mcp.md`), policy-gated review (`review --policy`, `docs/policy.md`),
