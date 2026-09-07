@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-labelledby="faviconTitle">
+  <title id="faviconTitle">Sentinel favicon</title>
+  <!-- Original geometry. Ultra-simplified mark for 16x16: the rounded-square
+       badge IS the shield-boundary at this size; one bold square-cut check.
+       No thin strokes, no small counters — legible at 16px. -->
+  <rect x="0" y="0" width="16" height="16" rx="3" fill="#111827"/>
+  <path d="M3.5 8.5 L7 12 L12.5 4.5" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

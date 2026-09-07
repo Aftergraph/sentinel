@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 48" role="img" aria-labelledby="doNotShipTitle">
+  <title id="doNotShipTitle">Verdict pill — DO NOT SHIP</title>
+  <!-- Original geometry. Same 48-unit pill system and mini-mark as the SHIP
+       pill; only the token (red) and the verdict string change. -->
+  <rect x="2" y="2" width="236" height="44" rx="22" fill="#B91C1C"/>
+  <g transform="translate(14,8) scale(0.3333)">
+    <path d="M48 6 L82 19 V50 C82 69 67 80 48 90 C29 80 14 69 14 50 V19 Z" fill="#FFFFFF"/>
+    <path d="M31 49 L43 61 L66 33" fill="none" stroke="#B91C1C" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+  <text x="54" y="31" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="20" font-weight="700" letter-spacing="2" fill="#FFFFFF">DO NOT SHIP</text>
+</svg>

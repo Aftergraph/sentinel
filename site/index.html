@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel by Aftergraph — Ship code you can prove works</title>
+<meta name="description" content="Sentinel reviews, tests and verifies every change against the exact commit you intend to merge.">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="site-nav">
+<nav aria-label="Primary">
+<a class="brand" href="#hero">Sentinel <span>by Aftergraph</span></a>
+<ul>
+<li><a href="#not-verification">Review is not verification</a></li>
+<li><a href="#verify">Verify</a></li>
+<li><a href="#exact-head">Exact HEAD</a></li>
+<li><a href="#cta">Get started</a></li>
+</ul>
+</nav>
+</header>
+<main>
+<section id="hero" aria-labelledby="hero-title">
+<p class="kicker">Verified code review — CLI, first wedge</p>
+<h1 id="hero-title">Ship code you can prove works</h1>
+<p class="lede">Sentinel reviews, tests and verifies every change against the exact commit you intend to merge</p>
+<p class="proof">Rule pack v1.6.0 — 25 deterministic rules. Count verified live from <code>lib/rulepack.js</code>:</p>
+<pre><code>$ node --version
+v24.18.1
+$ node -e "import('./lib/rulepack.js').then(m=&gt;console.log(m.ruleIdsForPack().length))"
+25</code></pre>
+<p class="note">Run from the repo root. Both commands above were executed here; the outputs shown are the outputs observed.</p>
+<p>
+<a class="btn" href="#verify">See how verification works</a>
+<a class="btn ghost" href="#exact-head">Why exact HEAD matters</a>
+</p>
+</section>
+<section id="not-verification" aria-labelledby="not-verification-title">
+<h2 id="not-verification-title">Review is not verification</h2>
+<p>Review comments are cheap; merge confidence is not. A comment thread says someone looked. A verdict says this exact commit was checked, names what was found, and cites where.</p>
+<ul>
+<li><strong>Comments guess.</strong> A verdict of <span class="pill ship">SHIP</span> or <span class="pill no-ship">DO NOT SHIP</span> is issued only against the exact commit it verified.</li>
+<li><strong>Stale reviews mislead.</strong> Reviewing a stale HEAD, re-reporting fixed findings, or approving what was never verified is the failure mode Sentinel refuses: a stale base invalidates the verdict automatically.</li>
+<li><strong>Evidence, not adjectives.</strong> Short verdicts with cited evidence — file and line, for example <code>routes/admin.mjs:41</code> style references — never praise without a cited check.</li>
+</ul>
+</section>
+<section id="verify" aria-labelledby="verify-title">
+<h2 id="verify-title">Verify</h2>
+<p>Three properties hold for every verdict. Select each tab:</p>
+<div data-tabs>
+<div role="tablist" aria-label="Verification properties">
+<button role="tab" id="tab-review" aria-controls="panel-review" aria-selected="true">Verdict</button>
+<button role="tab" id="tab-rerun" aria-controls="panel-rerun" aria-selected="false" tabindex="-1">Re-run</button>
+<button role="tab" id="tab-rules" aria-controls="panel-rules" aria-selected="false" tabindex="-1">Rules</button>
+</div>
+<div role="tabpanel" id="panel-review" aria-labelledby="tab-review" tabindex="0">
+<p>Each review ends in a merge-ready verdict: <span class="pill ship">SHIP</span> (exit 0) or <span class="pill no-ship">DO NOT SHIP</span> (exit 1), with findings cited to file and line. Exit 2 means <span class="pill stale">STALE</span> — re-run, never treat it as failure.</p>
+</div>
+<div role="tabpanel" id="panel-rerun" aria-labelledby="tab-rerun" tabindex="0" hidden>
+<p>Every review appends a content-addressed receipt to the local ledger. Re-running the same HEAD yields the same receipt id — the artifact reads as a certificate, not a chat message.</p>
+</div>
+<div role="tabpanel" id="panel-rules" aria-labelledby="tab-rules" tabindex="0" hidden>
+<p>Rule pack v1.6.0 ships 25 deterministic rules (supported packs: 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0). Style findings are reported but never block a verdict; which severities block is set by policy file, not by the page.</p>
+</div>
+</div>
+</section>
+<section id="exact-head" aria-labelledby="exact-head-title">
+<h2 id="exact-head-title">Exact HEAD</h2>
+<p>A verdict names the commit it verified. Move the base or the HEAD and the verdict no longer applies — it is invalidated automatically, so nobody merges on yesterday's approval.</p>
+<ul>
+<li>Verdict is bound to the exact commit reviewed.</li>
+<li>Stale base invalidates the verdict; exit 2 signals re-run.</li>
+<li>Same HEAD re-run produces the same receipt id.</li>
+</ul>
+</section>
+<section id="cta" aria-labelledby="cta-title">
+<h2 id="cta-title">Get started</h2>
+<p>Start where the product starts: the CLI on your own repo. Confirm Node 20 or later, then count the rule pack yourself — the two commands at the top of this page are the whole check.</p>
+<p><a class="btn" href="#hero">Back to the verified commands</a></p>
+</section>
+</main>
+<footer>
+<p>Sentinel by Aftergraph — verified code review. Claims on this page are limited to what the repo verifies: <code>README.md</code>, <code>docs/brand-identity.md</code>, <code>lib/rulepack.js</code> (rule pack v1.6.0, 25 rules).</p>
+</footer>
+</body>
+</html>

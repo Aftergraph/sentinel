@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 48" role="img" aria-labelledby="shipTitle">
+  <title id="shipTitle">Verdict pill — SHIP</title>
+  <!-- Original geometry. 48-unit pill height; mini-mark is sentinel-mark.svg
+       geometry at scale 0.3333. Type is system monospace with +2 tracking so
+       the pill stays monospace-friendly at any rendering. -->
+  <rect x="2" y="2" width="140" height="44" rx="22" fill="#15803D"/>
+  <g transform="translate(14,8) scale(0.3333)">
+    <path d="M48 6 L82 19 V50 C82 69 67 80 48 90 C29 80 14 69 14 50 V19 Z" fill="#FFFFFF"/>
+    <path d="M31 49 L43 61 L66 33" fill="none" stroke="#15803D" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+  <text x="54" y="31" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="20" font-weight="700" letter-spacing="2" fill="#FFFFFF">SHIP</text>
+</svg>

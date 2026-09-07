@@ -8,7 +8,7 @@ foundation work.
 |---|---|---|---|
 | S0 | Exact-HEAD local CLI | review/resolve/verify, 20-rule pack, receipts+ledger, `--diff` local mode, 74 green | DONE (pack v1.6.0: 25 rules, 461 green; `--diff` local mode ships) |
 | S1 | GitHub App: review + verdict card | webhook verify, review-on-PR, card update-in-place, STALE on push, mocked tests green | IMPLEMENTED + mocked tests green (`apps/github/`); real install / webhook delivery unverified |
-| S2 | Context graph, cross-file reasoning | symbol/call/test graph for JS/TS; finding shows blast radius | not started |
+| S2 | Context graph, cross-file reasoning | symbol/call/test graph for JS/TS; finding shows blast radius | SHIPPED (uncommitted): engine + CLI/MCP blast-radius (`lib/context-graph.js`, `docs/context-graph.md`); review/console wiring; Python import-graph (static/conditional/dynamic, package resolution, zero cross-language edges); 2 held-out bench cases live; test/route nodes open |
 | S3 | Verification runner + evidence items | isolated run of build/tests, evidence refs on verdict | DONE, local scope (`lib/runner.js`, `lib/pipeline.js`, `lib/evidence-store.js`, `verify-run` CLI; runner/verify/pipeline/journey tests green); hosted runners open |
 | S4 | Fix loop + re-verification | patch artifact → tests → new verdict | BLOCKED on decisions #4 |
 | S5 | Org policies, analytics, multi-repo | policy files, org board, console | PARTIAL: console BUILT local (`console/`, smoke PASS) + policies ship (`lib/policy.js`, `--policy`, MCP tools); analytics / multi-repo open |

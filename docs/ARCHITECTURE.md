@@ -21,6 +21,7 @@ Review is read-only by construction (ledger + stdout are local).
 | `lib/verify.js` | ENGINE S3 deterministic finding→checks planner + run lifecycle; closed set of 8 check types | `CHECK_TYPES` (BUILD, TEST, TYPECHECK, LINT, STATIC_ANALYSIS, SECRET_SCAN, CONTRACT_TEST, POLICY_CHECK), `PENDING/RUNNING/PASS/FAIL`, `planChecks`, `createRun`, `startRun`, `completeRun`, `severityOf` |
 | `lib/runner.js` | Isolated local check executor: temp-copy repo, HEAD-pinned, allowlist env, seals evidence per check | `runLocal`, `DEFAULT_TIMEOUT_MS` (120000), `MAX_TIMEOUT_MS` (600000), `MAX_OUTPUT_BYTES` (64K) |
 | `lib/pipeline.js` | Wires `planChecks` → `createRun`/`startRun` → `runLocal` → `completeRun` into one call | `executePipeline({ finding, repoDir, targetSha, commands, env, policy })` |
+| `lib/context-graph.js` | Deterministic JS/TS + Python symbol+import+call graph; repo walk with skips+cap; blast-radius queries (additive context, never verdict input) | `parseModule`, `parsePythonModule`, `buildGraph`, `buildRepoGraph`, `resolveRepoFile`, `blastRadius`; CLI `context blast-radius`; MCP `sentinel_blast_radius` |
 | `lib/evidence.js` | ENGINE S2 sealed, frozen, content-addressed evidence items (`id` = sha256 of body) | `sealEvidence`, `attachEvidence`, `hashBody`, `canonicalJson` |
 | `lib/evidence-store.js` | File-backed JSON persistence for sealed items; fail-closed seal gate on `put()` | `createEvidenceStore(filePath)` |
 | `lib/policy.js` | Versioned verification policies (fail closed): parse → scope-resolve → evaluate + one audit event | `POLICY_API_VERSION`, `POLICY_KIND`, `KNOWN_SEVERITIES`, `parsePolicy`, `resolvePolicy`, `evaluatePolicy`, `policyVersion` |
@@ -109,10 +110,10 @@ Route table (all verified in code; `PUT /api/config` included):
 | `GET /api/rules` | `{pack, rules: [{id, severity, blocks}]}` |
 | `GET /api/config` / `PUT /api/config` | Read / fail-closed write of `sentinel.config.json` |
 
-### `mcp/sentinel-mcp.js` — 14 read-only tools, JSON-RPC 2.0 over stdio
+### `mcp/sentinel-mcp.js` — 15 read-only tools, JSON-RPC 2.0 over stdio
 
-Tools never write code, approve, or push. Pinned at 14 by
-`test/mcp-health.test.mjs` (`TOOLS.length === 14`) and `docs/mcp.md`:
+Tools never write code, approve, or push. Pinned at 15 by
+`test/mcp-health.test.mjs` (`TOOLS.length === 15`) and `docs/mcp.md`:
 
 1. `sentinel_review` — diff/PR → SHIP/DO_NOT_SHIP verdict
 2. `sentinel_rules_list` — rule ids + severities + blocking flags

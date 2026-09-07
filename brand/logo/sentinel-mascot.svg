@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="sentinelMascotTitle">
+  <title id="sentinelMascotTitle">Sentinel night-watch mascot — hooded watcher bust</title>
+  <!-- Original geometry, hand-authored for Sentinel by Aftergraph.
+       Same 96-unit grid and shield construction as sentinel-mark.svg.
+       The watcher wears a watchman helm: one horizontal visor slit divided
+       by a nose guard (a T-visor, not eyes — deliberately no clip-art eyes).
+       Brow check echoes the mark. Flat shapes only; zero gradients. -->
+  <path d="M24 96 C24 84 34 78 48 78 C62 78 72 84 72 96 Z" fill="#111827"/>
+  <path d="M48 6 L80 18 V46 C80 66 66 77 48 88 C30 77 16 66 16 46 V18 Z" fill="#111827"/>
+  <path d="M39 30 L44 35 L55 23" fill="none" stroke="#22C55E" stroke-width="4.5" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="28" y="42" width="40" height="10" rx="5" fill="#FFFFFF"/>
+  <rect x="45.5" y="38" width="5" height="18" rx="2" fill="#111827"/>
+</svg>

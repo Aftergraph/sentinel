@@ -27,7 +27,13 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
 | `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
 | `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
-| `docs/mcp.md` | MCP server tools (14, read-only) + client setup |
+| `docs/mcp.md` | MCP server tools (15, read-only) + client setup |
+| `docs/context-graph.md` | Context graph: JS/TS symbol+import+call graph, `context blast-radius` CLI, `sentinel_blast_radius` MCP tool (additive context, never verdict input) |
+| `docs/getting-started.md` | First review in five minutes: install → review → verdict → receipt (every command runnable) |
+| `docs/troubleshooting.md` | Real failure modes with observed messages: STALE, INVALID, 401/429, pack pins, docker WSL |
+| `docs/faq.md` | REVIEWED != VERIFIED, receipts, overrides, what Sentinel does not do |
+| `site/` | Static zero-dep marketing shell: hero, review-is-not-verification, verify, exact-HEAD (claims limited to repo-verified facts) |
+| `demo/` | Offline walkthrough demo (payments-api): diff → finding → verify run → evidence → verdict, with pinned EXPECTED outputs |
 | `docs/receipts-v0.1.md` | Receipt/ledger format + `verify` contract |
 | `docs/override.md` | Verdict override: `--override` flags, `OVERRIDDEN` receipt line, fail-closed errors |
 | `docs/console-v1-design.md` | Console API contract (route table) + views |
@@ -52,6 +58,7 @@ git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub
 git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
 git diff | sentinel review --diff - --repo myorg/myrepo --override DO_NOT_SHIP --override-reason incident-123 --override-actor alice  # break-glass override, fail-closed (docs/override.md)
 sentinel verify run --finding <ruleId:file:line> --repo-dir . --commands ./commands.json  # isolated verify run (docs/pipeline.md)
+sentinel context blast-radius --repo-dir . --file lib/review.js [--symbol foo]  # blast radius: affected files/symbols/tests (docs/context-graph.md)
 sentinel resolve --rule-id <id> --file <path> --reason <text>  # silence a finding (memory)
 sentinel --help                       # every flag documented; output matches this file
 ```
@@ -59,7 +66,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 461 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+Full suite: `npm test` — 466 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
 1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24, 1.6.0 = 25 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,

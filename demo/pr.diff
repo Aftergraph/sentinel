@@ -1,0 +1,15 @@
+diff --git a/refunds.js b/refunds.js
+new file mode 100644
+index 0000000..3b18e51 100644
+--- /dev/null
++++ b/refunds.js
+@@ -0,0 +1,9 @@
++// payments-api: refund helpers.
++// Fixture for the Sentinel offline demo.
++export function isFreeRefund(refund) {
++  return refund.amount == 0;
++}
++
++export function formatAmount(cents) {
++  return `$${(cents / 100).toFixed(2)}`;
++}

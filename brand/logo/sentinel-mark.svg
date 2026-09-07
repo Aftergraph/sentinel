@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="sentinelMarkTitle">
+  <title id="sentinelMarkTitle">Sentinel mark — shield-boundary with verification check</title>
+  <!-- Original geometry, hand-authored for Sentinel by Aftergraph.
+       Construction: 96-unit grid. Shield outer boundary derived from two
+       r=34 construction circles centred at (30,46) and (66,46), squared at
+       the top edge (y=19) and meeting at the bottom point (48,90).
+       Check arms run on exact 45-degree diagonals; terminals are cut square
+       (the "diagonal cut" signature). Fixed-ink build: replace currentColor
+       with #111827. -->
+  <path d="M48 6 L82 19 V50 C82 69 67 80 48 90 C29 80 14 69 14 50 V19 Z" fill="currentColor"/>
+  <path d="M31 49 L43 61 L66 33" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

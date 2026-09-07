@@ -7,11 +7,11 @@ hits **iff** every expected rule fires **and** no unexpected rule fires
 expected — the runner is never weakened to make a pack pass.
 
 ```bash
-node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.5.0)
+node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.6.0)
 node --test test/bench.test.mjs
 ```
 
-Current score (v1.5.0): **19 cases, recall 1.0, precision 1.0, 0 misses.**
+Current score (v1.6.0): **24 cases, recall 1.0, precision 1.0, 0 misses.**
 
 Metrics are pure counts (recall, precision, FP-per-case, rules-fired
 distribution). No LLM, no timing, no network. Scores are data: a low
@@ -32,16 +32,35 @@ honest about the pack it measures.
 points at an existing `test/fixtures` diff — never a copy. `expect` lists
 every rule that must fire, `[]` for clean controls. `severity`/`note` are
 documentation only. `"strict": false` + `"reason"` marks a recall-only
-case; none ship — the slot exists so a future cross-firing fixture can be
-encoded without weakening the runner.
+case; `"heldout": true` marks a held-out case that is evaluated
+but EXCLUDED from the main score and rendered under
+`## Held-out (excluded from score)` (advisory only — held-out
+results never enter recall/precision/FP-per-case or any verdict); two ship:
+`security-eval-l4-positive` (positive) and `clean-structured-clone-negative`
+(clean control), both L4 additions, so the newest cases prove the pack instead
+of padding its score.
 
-## Coverage (16 cases)
+## Coverage (28 cases: 26 scored + 2 held-out)
 
 All six severities: security (eval, private-key, + overlap), reliability
-(process-exit, lockfile), data (destructive-sql, where-on-delete),
+(process-exit, lockfile, health-check, recreate-single-replica,
+retry-backoff), data (destructive-sql, where-on-delete, foreign-key),
 performance (n-plus-one, + overlap), correctness (strict-equality),
 style (no-var, console-log). Four clean controls (`expect: []`): eval,
-secrets-cicd, strict-equality, sync-io negatives.
+secrets-cicd, strict-equality, sync-io negatives, plus
+two L4 controls (`clean-optional-chaining-negative`: `?.`/`??`/
+`Array.at`/`Object.hasOwn`; `clean-structured-clone-negative`:
+`structuredClone`/`Object.entries`/`fromEntries`) and two L4
+positives (`security-eval-l4-positive` fires only
+`no-eval-with-dynamic-input`; `style-no-var-l4-positive` fires only
+`no-var-instead-of-let-const`), plus two FP-trap controls pinning rule
+fixes (`clean-findings-prop-negative`: loop + `.findings` property is
+data, not a query; `clean-params-get-negative`: `params.get()` is
+inbound data, not a nested fetch) and one more positive
+(`performance-map-query`: `.map` + `.find(` fires only
+`no-n-plus-one-queries-in-api-resolvers`;
+`performance-map-query-singleline`: same bug on one line — the window
+includes the opener's own line).
 
 ## Strictness and the known overlap
 

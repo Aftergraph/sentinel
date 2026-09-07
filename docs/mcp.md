@@ -24,6 +24,7 @@ as the CLI (`analyzeDiff`, same rule packs).
 | `sentinel_evidence_verify` | `storePath` (required) | `verifyAll` summary (`{storePath, ok, checked, bad, count}`); corrupt file returns `isError`, never throws |
 | `sentinel_health_verdicts` | `ledgerPath` (required, no default probing) | verdict totals + top blocking rules from a ledger file (`{ledgerPath, totals, byRule, topRules (= byRule), policyOverrides, window: {receipts, since}}`); missing file returns `isError`, never throws |
 | `sentinel_ledger_verify` | `ledgerPath` (required, no default probing) | ledger hash-chain check via `lib/receipt.js` (`{ledgerPath, ok, checked, bad}`); tampered entries reported with bad receipt ids; missing file returns `isError`, never throws |
+| `sentinel_blast_radius` | `repoDir` (required), `file` (required, must stay inside `repoDir`), `symbol?`, `line?` | files/symbols/tests affected by a change (`lib/context-graph.js` walk; executes nothing; escapes return `isError`, never throws). See `docs/context-graph.md` |
 
 Error paths (observed live; contract: `test/mcp-health.test.mjs`): missing
 `ledgerPath` returns `isError` with
@@ -32,7 +33,7 @@ shape for `sentinel_ledger_verify`); a missing file returns `isError` with
 `sentinel_health_verdicts: ledger file not found (<path>).` Every result
 echoes `ledgerPath` so callers can correlate responses. Catalog order is
 pinned: the original 12 tools come first, the 2 health/ledger tools append
-after them (`TOOLS.length` is 14).
+after them, `sentinel_blast_radius` appends last (`TOOLS.length` is 15).
 
 No fix, approve, push, or write tool exists — `decisions.md` #4 holds for
 agents too. `fix.submit` arrives only if the owner reverses #4.
