@@ -68,13 +68,22 @@ test('mcp: sentinel_review errors without input', async () => {
   assert.equal(res.result.isError, true);
 });
 
-test('mcp: PR mode validates repo shape before shelling out', async () => {
+test('mcp: PR mode validates repo shape without a shell', async () => {
   const res = await handleMessage({
     jsonrpc: '2.0', id: 8, method: 'tools/call',
     params: { name: 'sentinel_review', arguments: { repo: 'o/r; rm -rf /', pr: 7 } },
   });
   assert.equal(res.result.isError, true);
   assert.ok(JSON.parse(res.result.content[0].text).error.includes('owner/name'));
+});
+
+test('mcp: PR mode validates pr is an integer (no gh spawn)', async () => {
+  const res = await handleMessage({
+    jsonrpc: '2.0', id: 9, method: 'tools/call',
+    params: { name: 'sentinel_review', arguments: { repo: 'o/r', pr: 1.5 } },
+  });
+  assert.equal(res.result.isError, true);
+  assert.ok(JSON.parse(res.result.content[0].text).error.includes('integer'));
 });
 
 test('mcp: rules list carries severities + blocking flags', async () => {

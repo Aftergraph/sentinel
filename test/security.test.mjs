@@ -38,6 +38,16 @@ test('security: review() with evil repo throws before any exec', async () => {
   assert.equal(existsSync(canary), false, 'no shell ever ran');
 });
 
+test('security: review() rejects non-integer pr before any exec', async () => {
+  for (const bad of [0, -1, NaN, 1.5, '42', null]) {
+    await assert.rejects(
+      review({ pr: bad, repo: 'o/r', diffText: undefined }),
+      /positive integer/,
+      `pr=${String(bad)} must fail closed`,
+    );
+  }
+});
+
 // #3: glob escaping covers every metachar, not just the first.
 test('security: exclude globs escape all metacharacters', () => {
   const re = globToRegExp('*.a.b');

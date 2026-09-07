@@ -1,3 +1,31 @@
 # Generated bench artifacts (reproduce with `node bench/report.js`)
 bench/results.json
 bench/REPORT.md
+
+# Environment files - NEVER commit
+.env
+.env.*
+!.env.example
+
+# Secrets - NEVER commit (key material in history stays compromised)
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+*-credentials.json
+service-account*.json
+
+# IDE and OS
+.idea/
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+
+# Logs that might contain sensitive data
+*.log
+logs/

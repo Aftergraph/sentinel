@@ -9,7 +9,7 @@
 //       "command": "node", "args": ["/path/to/sentinel/mcp/sentinel-mcp.js"] } } }
 // Remote (Cloudflare McpAgent, Streamable HTTP) is phase 2 — see docs/mcp.md.
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { createOrgStore } from '../lib/org-store.js';
@@ -243,8 +243,11 @@ function fetchPrDiff(repo, pr) {
     throw new Error('PR mode needs repo as owner/name and pr as an integer.');
   }
   try {
-    return execSync(
-      `gh api repos/${repo}/pulls/${pr} -H "Accept: application/vnd.github.v3.diff"`,
+    // argv form, never a shell string: the allowlist above is necessary
+    // validation, but no shell should ever see these values (wave-29).
+    return execFileSync(
+      'gh',
+      ['api', `repos/${repo}/pulls/${pr}`, '-H', 'Accept: application/vnd.github.v3.diff'],
       { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
     );
   } catch {
