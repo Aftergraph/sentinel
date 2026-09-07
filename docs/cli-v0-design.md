@@ -68,6 +68,18 @@ Gate on exit code: 0 pass, 1 fail, 2 re-run. Dogfood target: every Aftergraph st
 
 No auto-fix, no auto-approve, no PR comments (GitHub App phase), no dashboard, no User table, no server component. Style-severity findings are reported but never block.
 
+## 8. Standards alignment (draft — pending owner acceptance)
+
+Prior-art decisions per FIN lifecycle (working-draft maturity, no higher claim):
+
+- **Findings output → ADOPT SARIF.** Static Analysis Results Interchange Format (OASIS standard, GitHub code-scanning native) replaces the custom Finding JSON for the machine surface. `--format sarif` emits standard `runs[].results[]` with `ruleId`, `level`, and `locations[]` (file:line). The SHIP/STALE verdict envelope has no prior art and stays NEW INTERNAL: a minimal `{ verdict, headSha, baseSha, rulePackVersion }` wrapper around the SARIF run. Rationale: two teams reach the same result; GitHub SARIF upload becomes a free App-phase integration.
+- **Secrets rules (pack #2–3) → ADOPT gitleaks config.** No custom entropy scanner in v0; ship a pinned gitleaks config + version as the pack's secrets provider. Custom detection is rejected as duplicate prior art.
+- **Exit codes → PROFILED de-facto CI convention.** 0 pass / nonzero fail is ADOPTED universal CI behavior. Code 2 for STALE is a documented EXTENSION: CI must map it to re-run, never to failure. `sysexits.h` (EX_TEMPFAIL=75) considered and rejected — 75 breaks the `exit==0||retry` muscle memory every CI author has; 2 is the smallest deviation that survives contact with real pipelines. `// ponytail: exit 2, not EX_TEMPFAIL — re-run convention beats stdlib purity here.`
+- **Precision audit (recommendation step 1) → EXPERIMENTAL PROPOSAL.** Bounded hypothesis test (20 PRs, per-rule precision table), not a compatibility promise. If precision <80% for a rule, the rule is cut — the experiment gates the pack, it does not negotiate with it.
+- **Verdict determinism (recommendation step 2) → NEW INTERNAL, proposed locked.** v0 verdict path is pure functions of (diff, rule-pack): same diff + same pack = same verdict, byte-identical. No LLM in the verdict path; LLM allowed in v1 as explanation layer only. Pending owner lock in `decisions.md`.
+
+Maturity: working draft. Missing for candidate: reference implementation, review window, conformance recipe (F-03 fixtures are the start of one).
+
 ## 7. Acceptance for v0 slice
 
 - `sentinel review --pr <n>` runs against 5 real Aftergraph PRs reproducing `prototype/5pr-validation.md` verdicts (4/5 match minimum).
