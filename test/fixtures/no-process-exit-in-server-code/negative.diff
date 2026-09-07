@@ -6,3 +6,12 @@ index 1111111..2222222 100644
  start();
 +process.exitCode = 1;
  export function stop() {}
+diff --git a/bin/cli.js b/bin/cli.js
+index 1111111..2222222 100644
+--- a/bin/cli.js
++++ b/bin/cli.js
+@@ -1,3 +1,5 @@
+ try { main(); } catch (err) {
++  console.error(err.message);
++  process.exit(1);
+ }
