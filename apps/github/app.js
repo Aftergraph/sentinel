@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { verifySignature } from './verify.js';
 import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
+import { handleInstallation } from './store.js';
 import {
   analyzeDiff, checkFreshness, computeDelta, loadConfig, environmentInfo,
 } from '../../lib/review.js';
@@ -20,6 +21,17 @@ const MAX_BODY = 1024 * 1024;
 
 export async function routeEvent({ event, payload, platform, opts = {} }) {
   if (event === 'ping') return { handled: true, action: 'pong' };
+  // GitHub App install lifecycle (slice 0+1): persist the installation
+  // record, fail closed on malformed payloads (handleInstallation throws
+  // and the HTTP handler maps it to 500). Unknown events stay ignored.
+  if (event === 'installation' || event === 'installation_repositories') {
+    const record = handleInstallation(payload, { storePath: opts.storePath });
+    return {
+      handled: true,
+      action: `${event}:${payload.action || 'unknown'}`,
+      installationId: record ? record.installationId : null,
+    };
+  }
   if (event !== 'pull_request') return { handled: false, action: `ignored:${event}` };
   if (!['opened', 'synchronize', 'reopened'].includes(payload.action)) {
     return { handled: false, action: `ignored:action:${payload.action}` };
@@ -185,6 +197,7 @@ async function main() {
       configHash: null,
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
+      storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);

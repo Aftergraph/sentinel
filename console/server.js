@@ -412,6 +412,61 @@ export function createConsoleServer(opts = {}) {
     return out.valid ? { valid: true } : { valid: false, reason: out.reason };
   }
 
+  // Overview roll-up (display only — derived from the same ledger +
+  // topology fixtures as /api/repos; no new persistence — design §6).
+  // open = tracked repos; blocked/stale = latest-verdict counts;
+  // critical = outstanding blocking findings across latest receipts;
+  // confidence = SHIP share of repos with a verdict (1 when none yet).
+  function buildOverview() {
+    const repos = listRepos();
+    const chain = noLedger ? [] : loadLedger(ledgerPath);
+    const latest = new Map();
+    for (const r of chain) {
+      if (r && typeof r.repo === 'string') latest.set(r.repo, r);
+    }
+    let blocked = 0;
+    let stale = 0;
+    let critical = 0;
+    let shipped = 0;
+    let withVerdict = 0;
+    const needsAttention = [];
+    for (const row of repos) {
+      const rec = latest.get(row.repo);
+      const verdict = rec ? rec.verdict : null;
+      const headSha = (rec && rec.headSha) || row.headSha || null;
+      const receiptId = (rec && rec.receipt_id) || row.receiptId || null;
+      if (verdict === 'DO_NOT_SHIP') {
+        blocked += 1;
+        withVerdict += 1;
+        const n = rec && rec.counts && typeof rec.counts.blocking === 'number'
+          ? rec.counts.blocking
+          : (rec && rec.findings && Array.isArray(rec.findings.blocking) ? rec.findings.blocking.length : 0);
+        critical += n;
+        needsAttention.push({ repo: row.repo, reason: 'blocked', verdict, headSha, receiptId });
+      } else if (verdict === 'STALE') {
+        stale += 1;
+        withVerdict += 1;
+        needsAttention.push({ repo: row.repo, reason: 'stale', verdict, headSha, receiptId });
+      } else if (verdict === 'SHIP') {
+        shipped += 1;
+        withVerdict += 1;
+      } else {
+        needsAttention.push({ repo: row.repo, reason: 'no-verdict', verdict: null, headSha: row.headSha || null, receiptId: null });
+      }
+    }
+    needsAttention.sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
+    const recentVerdicts = chain.slice(-10).reverse().map((r) => ({
+      repo: r.repo,
+      prNumber: r.prNumber ?? null,
+      verdict: r.verdict,
+      headSha: r.headSha,
+      receiptId: r.receipt_id,
+      timestamp: r.timestamp,
+    }));
+    const confidence = withVerdict === 0 ? 1 : Math.round((shipped / withVerdict) * 100) / 100;
+    return { confidence, open: repos.length, blocked, stale, critical, needsAttention, recentVerdicts };
+  }
+
   function listRules() {
     const pack = activePack();
     return {
@@ -527,6 +582,9 @@ export function createConsoleServer(opts = {}) {
       }
       if (method === 'POST' && path === '/api/verify') {
         return send(200, runVerify(await readJson(req)));
+      }
+      if (method === 'GET' && path === '/api/overview') {
+        return send(200, buildOverview());
       }
       if (method === 'GET' && path === '/api/rules') {
         return send(200, listRules());

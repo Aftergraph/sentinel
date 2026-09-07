@@ -11,7 +11,7 @@
   "name": "@aftergraph/sentinel",
   "private": true,
   "scripts": {
-    "test": "node --test test/rules.test.mjs test/memory-sarif.test.mjs test/exact-head.test.mjs test/cli-contract.test.mjs test/receipts.test.mjs test/mcp.test.mjs test/github-app.test.mjs test/console-api.test.mjs test/console-equivalence.test.mjs test/bench.test.mjs test/console-topology.test.mjs test/github-app-auth.test.mjs",
+    "test": "node --test test/rules.test.mjs test/memory-sarif.test.mjs test/exact-head.test.mjs test/cli-contract.test.mjs test/receipts.test.mjs test/mcp.test.mjs test/github-app.test.mjs test/console-api.test.mjs test/console-equivalence.test.mjs test/bench.test.mjs test/console-topology.test.mjs test/github-app-auth.test.mjs test/finding.test.mjs test/evidence.test.mjs test/github-install.test.mjs test/console-overview.test.mjs",
     "serve": "node bin/sentinel.js serve",
     "smoke:console": "bash scripts/console-smoke.sh"
   },

@@ -94,6 +94,15 @@ code { color: var(--cyan); }
   .sk { animation: none; }
   * { transition: none !important; }
 }
+/* Overview: brand law — purple=AI/inference, green=verified/SHIP,
+   red=blocked, muted-orange=STALE, gray=unknown. Verdicts render via
+   .pill icon+label+text (never color-only). No motion in this view;
+   the global prefers-reduced-motion block below covers the rest. */
+.ov-confidence { color: var(--purple); }
+.bignum { font-size: 28px; font-weight: 700; margin: 4px 0; }
+ol.queue, ul.queue { list-style: none; margin: 8px 0; padding: 0; }
+.queue li { background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
 /* Toasts: polite, auto-dismiss, never steal focus. */
 #toasts { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right)); display: flex;
   flex-direction: column; gap: 8px; z-index: 50; }

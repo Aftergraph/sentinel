@@ -92,6 +92,36 @@ async function vBoard() {
   focusContent();
 }
 
+async function vOverview() {
+  el.innerHTML = skeleton(4);
+  try {
+    const o = await api('GET', '/api/overview');
+    const cards = [
+      ['Open', o.open, 'tracked repositories'],
+      ['Blocked', o.blocked, 'latest verdict DO NOT SHIP'],
+      ['Stale', o.stale, 'latest verdict STALE'],
+      ['Critical', o.critical, 'outstanding blocking findings'],
+    ].map(([label, n, hint]) =>
+      `<article class="card" tabindex="0" aria-label="${esc(label)}: ${esc(String(n))}"><h3>${esc(label)}</h3><p class="bignum">${esc(String(n))}</p><p class="dim">${esc(hint)}</p></article>`).join('');
+    const queue = o.needsAttention.length === 0
+      ? '<p class="ok">◆ All clear — nothing needs attention.</p>'
+      : '<ol class="queue">' + o.needsAttention.map((q) =>
+        `<li>${pill(q.verdict)} <strong>${esc(q.repo)}</strong> <span class="dim">${esc(q.reason)}` +
+        (q.headSha ? ` · <code>${esc(short(q.headSha))}</code>` : '') + '</span></li>').join('') + '</ol>';
+    const recent = o.recentVerdicts.length === 0
+      ? '<p class="dim">No verdicts recorded yet.</p>'
+      : '<ul class="queue">' + o.recentVerdicts.map((r) =>
+        `<li>${pill(r.verdict)} <strong>${esc(r.repo)}#${esc(String(r.prNumber ?? ''))}</strong> ` +
+        `<span class="dim"><code>${esc(short(r.headSha))}</code> · ${esc(r.timestamp || '')}</span></li>`).join('') + '</ul>';
+    el.innerHTML = '<h2>Overview</h2>' +
+      `<p class="ov-confidence" role="status">◆ AI confidence ${esc(String(o.confidence))} <span class="dim">(share of verdicts SHIP; model estimate, not evidence)</span></p>` +
+      `<section aria-label="Status cards"><div class="cards ov-cards">${cards}</div></section>` +
+      `<section aria-label="Needs attention"><h3>Needs attention (${o.needsAttention.length})</h3>${queue}</section>` +
+      `<section aria-label="Recent verdicts"><h3>Recent verdicts</h3>${recent}</section>`;
+  } catch (e) { el.innerHTML = '<h2>Overview</h2>' + errBox(e.message, true); }
+  focusContent();
+}
+
 async function vRun() {
   el.innerHTML = `<h2>Run review</h2>
     <label for="repo">Repository (diff mode)</label><input id="repo" placeholder="owner/name" autocomplete="off">
@@ -192,6 +222,7 @@ async function route() {
   const path = m ? m[1] : '/board';
   const q = new URLSearchParams(m && m[2] ? m[2] : '');
   setNav(path);
+  if (path === '/overview') return vOverview();
   if (path === '/run') return vRun();
   if (path === '/rules') return vRules();
   if (path === '/config') return vConfig();
