@@ -33,3 +33,15 @@ index 9999999..aaaaaaa 100644
 +#        readinessProbe: TODO add later
 +      containers:
 +      - image: registry/hasty:v1
+diff --git a/k8s/spaced-deploy.yaml b/k8s/spaced-deploy.yaml
+new file mode 100644
+index 0000000..bbbbbbb
+--- /dev/null
++++ b/k8s/spaced-deploy.yaml
+@@ -0,0 +1,6 @@
++apiVersion: apps/v1
++kind: Deployment
++  template:
++    spec:
++      containers:
++      - image : registry/spaced:v1

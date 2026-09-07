@@ -45,3 +45,17 @@ index 7777777..8888888 100644
 +#      - image: registry/retired:v1
 +#        readinessProbe: none, retired 2025
    text: kept for history
+diff --git a/k8s/spaced-probed.yaml b/k8s/spaced-probed.yaml
+new file mode 100644
+index 0000000..ccccccc
+--- /dev/null
++++ b/k8s/spaced-probed.yaml
+@@ -0,0 +1,8 @@
++apiVersion: apps/v1
++kind : Deployment
++  template:
++    spec:
++      containers:
++      - image : registry/spaced:v2
++        readinessProbe :
++          httpGet: { path: /healthz, port: 8787 }
