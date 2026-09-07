@@ -1,0 +1,9 @@
+diff --git a/server/handler.js b/server/handler.js
+index 1111111..2222222 100644
+--- a/server/handler.js
++++ b/server/handler.js
+@@ -1,3 +1,4 @@
+ export function handler(req, res) {
++  console.error("db unreachable", err);
+   res.end("ok");
+ }

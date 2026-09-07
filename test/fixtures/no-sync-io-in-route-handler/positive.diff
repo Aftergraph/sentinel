@@ -1,0 +1,8 @@
+diff --git a/server/routes.js b/server/routes.js
+index 1111111..2222222 100644
+--- a/server/routes.js
++++ b/server/routes.js
+@@ -1,4 +1,5 @@
+ import fs from 'node:fs';
++const banner = fs.readFileSync("./banner.txt", "utf8");
+ export function handler(req, res) {}

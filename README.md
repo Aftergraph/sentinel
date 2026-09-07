@@ -2,7 +2,7 @@
 
 **Product core:** Sentinel by Aftergraph is a verified code-review product that turns pull requests into merge-ready verdicts.
 
-**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. No code yet — this repo is strategy docs only.
+**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.1.0: 20 deterministic rules, see `docs/rulepack-v1.1.md`).
 
 ## Why Sentinel exists
 
@@ -25,6 +25,23 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/decisions.md` | Locked decisions + what needs owner approval |
 | `docs/todo.md` | Prototype-first backlog, no code yet |
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
+
+## CLI quickstart
+
+```
+npm install -g @aftergraph/sentinel   # Node >= 20, no build step
+sentinel review --pr 42               # human verdict, exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
+sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
+sentinel review --pr 42 --format sarif > results.sarif
+sentinel review --pr 42 --rule-pack 1.0.0  # pinned original 6-rule pack
+sentinel --help
+```
+
+CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never treat 2 as failure):
+
+```yaml
+- run: sentinel review --pr ${{ github.event.pull_request.number }} --format json
+```
 
 ## Recommended next execution
 

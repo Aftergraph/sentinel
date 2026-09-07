@@ -1,0 +1,8 @@
+diff --git a/server/http.js b/server/http.js
+index 1111111..2222222 100644
+--- a/server/http.js
++++ b/server/http.js
+@@ -1,3 +1,5 @@
+ import https from 'node:https';
++process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+ export const agent = new https.Agent();

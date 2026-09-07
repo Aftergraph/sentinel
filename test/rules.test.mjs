@@ -13,6 +13,20 @@ const RULES = [
   'no-unindexed-schema-migration-on-large-tables',
   'no-n-plus-one-queries-in-api-resolvers',
   'require-dataloader-or-eager-load-for-nested-fetches',
+  'no-eval-with-dynamic-input',
+  'no-disabled-tls-verification',
+  'no-private-key-in-diff',
+  'no-unpinned-github-action-ref',
+  'no-process-exit-in-server-code',
+  'no-hardcoded-localhost-url-in-diff',
+  'require-lockfile-update-with-manifest-change',
+  'no-destructive-sql-without-guard',
+  'require-where-on-delete-update',
+  'no-unbounded-list-query-without-pagination',
+  'no-sync-io-in-route-handler',
+  'require-strict-equality',
+  'no-var-instead-of-let-const',
+  'no-console-log-in-server-diff',
 ];
 
 for (const ruleId of RULES) {

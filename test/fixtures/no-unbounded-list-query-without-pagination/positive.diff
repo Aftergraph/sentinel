@@ -1,0 +1,11 @@
+diff --git a/server/routes.js b/server/routes.js
+index 1111111..2222222 100644
+--- a/server/routes.js
++++ b/server/routes.js
+@@ -1,4 +1,6 @@
+ import { db } from './db.js';
++app.get("/api/users", async (req, res) => {
++  const rows = await db.users.findAll();
++  res.json(rows);
++});
+ export const x = 1;

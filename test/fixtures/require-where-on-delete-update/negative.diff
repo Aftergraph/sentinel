@@ -1,0 +1,8 @@
+diff --git a/migrations/015_purge.sql b/migrations/015_purge.sql
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/migrations/015_purge.sql
+@@ -0,0 +1,2 @@
++DELETE FROM sessions WHERE expired_at < NOW();
++SELECT 1;
