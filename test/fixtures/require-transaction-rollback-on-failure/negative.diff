@@ -1,0 +1,14 @@
+diff --git a/migrations/001_add_users.sql b/migrations/001_add_users.sql
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/migrations/001_add_users.sql
+@@ -0,0 +1,8 @@
++BEGIN;
++CREATE TABLE users (
++  id SERIAL PRIMARY KEY,
++  email TEXT NOT NULL
++);
++EXCEPTION WHEN OTHERS THEN
++  ROLLBACK;
++COMMIT;

@@ -1,0 +1,7 @@
+diff --git a/server/resolvers.mjs b/server/resolvers.mjs
+index 1111111..2222222 100644
+--- a/server/resolvers.mjs
++++ b/server/resolvers.mjs
+@@ -1,3 +1,4 @@
++const users = await db.users.findAll({ include: 'posts' });
++return users;

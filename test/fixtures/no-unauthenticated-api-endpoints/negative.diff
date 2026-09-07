@@ -1,0 +1,10 @@
+diff --git a/server/routes.mjs b/server/routes.mjs
+index 1111111..2222222 100644
+--- a/server/routes.mjs
++++ b/server/routes.mjs
+@@ -10,3 +10,5 @@
+ import express from 'express';
+ const router = express.Router();
++router.get('/api/users', requireAuth, (req, res) => {
++  res.json(await db.users.findAll());
++});

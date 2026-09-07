@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Smoke test: run rule tests and verify CLI scaffold still works
+node --test test/rules.test.mjs
+
 node bin/sentinel.js review --pr 41 --repo Aftergraph/studio > /tmp/smoke.out 2>&1
 exit_code=$?
 
-if [ $exit_code -ne 0 ]; then
-  echo "FAIL: exit code was $exit_code, expected 0"
+# exit_code is 0 (SHIP) or 1 (DO NOT SHIP) — both acceptable; STALE is 2
+if [ $exit_code -gt 1 ]; then
+  echo "FAIL: exit code was $exit_code (unexpected)"
   cat /tmp/smoke.out
   exit 1
 fi
@@ -16,6 +20,6 @@ if ! grep -q '^HEAD: [0-9a-f]\{40\}$' /tmp/smoke.out; then
   exit 1
 fi
 
-echo "PASS: exit 0, HEAD line present"
+echo "PASS: rule tests green, exit $exit_code, HEAD line present"
 cat /tmp/smoke.out
 rm -f /tmp/smoke.out
