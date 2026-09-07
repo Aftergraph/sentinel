@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-lockfile-update-with-manifest-change/positive.diff", "expect": ["require-lockfile-update-with-manifest-change"], "name": "reliability-lockfile", "severity": "reliability"}

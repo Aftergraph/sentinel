@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-eval-with-dynamic-input/negative.diff", "expect": [], "name": "clean-eval-negative", "note": "FP control: commented-out eval must not fire.", "severity": "security"}

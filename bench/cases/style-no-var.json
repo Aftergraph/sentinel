@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-var-instead-of-let-const/positive.diff", "expect": ["no-var-instead-of-let-const"], "name": "style-no-var", "severity": "style"}

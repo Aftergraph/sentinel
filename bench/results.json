@@ -1,0 +1,221 @@
+{
+  "pack": "1.1.0",
+  "results": [
+    {
+      "case": "clean-eval-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "clean-secrets-cicd-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "clean-strict-equality-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "clean-sync-io-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "correctness-strict-equality",
+      "fired": [
+        "require-strict-equality"
+      ],
+      "expected": [
+        "require-strict-equality"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "data-destructive-sql",
+      "fired": [
+        "no-destructive-sql-without-guard"
+      ],
+      "expected": [
+        "no-destructive-sql-without-guard"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "data-where-on-delete",
+      "fired": [
+        "require-where-on-delete-update"
+      ],
+      "expected": [
+        "require-where-on-delete-update"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "overlap-unauthenticated-route",
+      "fired": [
+        "no-unauthenticated-api-endpoints",
+        "no-unbounded-list-query-without-pagination"
+      ],
+      "expected": [
+        "no-unauthenticated-api-endpoints",
+        "no-unbounded-list-query-without-pagination"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "overlap-unbounded-list",
+      "fired": [
+        "no-unauthenticated-api-endpoints",
+        "no-unbounded-list-query-without-pagination"
+      ],
+      "expected": [
+        "no-unauthenticated-api-endpoints",
+        "no-unbounded-list-query-without-pagination"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "performance-n-plus-one",
+      "fired": [
+        "no-n-plus-one-queries-in-api-resolvers"
+      ],
+      "expected": [
+        "no-n-plus-one-queries-in-api-resolvers"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "reliability-lockfile",
+      "fired": [
+        "require-lockfile-update-with-manifest-change"
+      ],
+      "expected": [
+        "require-lockfile-update-with-manifest-change"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "reliability-process-exit",
+      "fired": [
+        "no-process-exit-in-server-code"
+      ],
+      "expected": [
+        "no-process-exit-in-server-code"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "security-eval",
+      "fired": [
+        "no-eval-with-dynamic-input"
+      ],
+      "expected": [
+        "no-eval-with-dynamic-input"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "security-private-key",
+      "fired": [
+        "no-private-key-in-diff"
+      ],
+      "expected": [
+        "no-private-key-in-diff"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "style-console-log",
+      "fired": [
+        "no-console-log-in-server-diff"
+      ],
+      "expected": [
+        "no-console-log-in-server-diff"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "style-no-var",
+      "fired": [
+        "no-var-instead-of-let-const"
+      ],
+      "expected": [
+        "no-var-instead-of-let-const"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    }
+  ],
+  "metrics": {
+    "recall": 1,
+    "precision": 1,
+    "fpPerCase": 0,
+    "cases": 16,
+    "rulesFired": {
+      "require-strict-equality": 1,
+      "no-destructive-sql-without-guard": 1,
+      "require-where-on-delete-update": 1,
+      "no-unauthenticated-api-endpoints": 2,
+      "no-unbounded-list-query-without-pagination": 2,
+      "no-n-plus-one-queries-in-api-resolvers": 1,
+      "require-lockfile-update-with-manifest-change": 1,
+      "no-process-exit-in-server-code": 1,
+      "no-eval-with-dynamic-input": 1,
+      "no-private-key-in-diff": 1,
+      "no-console-log-in-server-diff": 1,
+      "no-var-instead-of-let-const": 1
+    }
+  }
+}

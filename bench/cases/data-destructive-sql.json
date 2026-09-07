@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-destructive-sql-without-guard/positive.diff", "expect": ["no-destructive-sql-without-guard"], "name": "data-destructive-sql", "severity": "data"}

@@ -1,0 +1,10 @@
+{
+  "name": "Sentinel Console",
+  "short_name": "Sentinel",
+  "description": "Local-first Sentinel review cockpit. Verdicts shown are local claims, never platform evidence.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1116",
+  "theme_color": "#0b1116"
+}

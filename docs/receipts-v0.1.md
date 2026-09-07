@@ -34,6 +34,12 @@ Ledger: append-only JSONL, default `~/.sentinel/ledger.jsonl`
 (`--ledger-path` overrides, `--no-ledger` disables write + delta read).
 Malformed lines are skipped, never fatal.
 
+Local mode (`review --diff <file|->`): no GitHub, no auth. The verdict
+binds to `--head-sha` when given (e.g. `git rev-parse HEAD` in a pre-push
+hook), else to a content hash (`local:<sha12>`) of the diff itself.
+Freshness has no remote to check, so STALE cannot occur locally; every
+other surface (receipts, delta, gov, excludes) works unchanged.
+
 ## Evidence-layer position (governance honesty)
 
 The ledger is a **local claim log**. It is not L1 action audit and not an

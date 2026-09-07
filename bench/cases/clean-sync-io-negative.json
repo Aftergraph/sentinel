@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-sync-io-in-route-handler/negative.diff", "expect": [], "name": "clean-sync-io-negative", "note": "FP control: sync IO under scripts/ (out of scope) must not fire.", "severity": "performance"}

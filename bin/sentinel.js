@@ -3,6 +3,8 @@ import { parseArgs } from 'node:util';
 import { review, resolveFinding, VALID_FORMATS } from '../lib/review.js';
 import { RULE_PACK_VERSION, SUPPORTED_PACKS } from '../lib/rulepack.js';
 import { SOURCE_ENUM, verifyReceipt } from '../lib/receipt.js';
+import { createConsoleServer, listen as listenConsole } from '../console/server.js';
+import { createPlatform } from '../apps/github/platform.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +24,8 @@ function printHelp() {
 
 Usage:
   sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov] [--rule-pack ${SUPPORTED_PACKS.join('|')}] [--source ${SOURCE_ENUM.join('|')}] [--ledger-path <path>] [--no-ledger] [--config <path>] [--memory-path <path>]
+  sentinel review --diff <file|-> [--repo owner/name] [--pr <n>] [--head-sha <sha>] [--base-sha <sha>] [same flags as above]
+  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
   sentinel --help
@@ -48,6 +52,16 @@ Config (sentinel.config.json in cwd, or --config):
   { "rulePack": "1.1.0", "exclude": ["docs/**", "*.md"] }
   Excluded findings are reported, never block. Malformed config fails closed.
 
+Console v1b (org-wide, display-only — see docs/console-v1b.md):
+  --topology <path>   Aftergraph platform-topology/1.0.json (repo list)
+  --org-state <path>  generated latest-org-state.json (exact HEAD per repo)
+
+Local mode (no GitHub, no auth — pre-commit hooks, piped diffs):
+  git diff | sentinel review --diff - --repo myorg/myrepo
+  sentinel review --diff /tmp/change.diff --head-sha $(git rev-parse HEAD)
+  # verdict binds to --head-sha, else to a content hash (local:<sha12>);
+  # freshness has no remote to check, so STALE cannot occur locally.
+
 Examples:
   sentinel review --pr 42
   sentinel review --pr 42 --format sarif > results.sarif
@@ -69,6 +83,8 @@ const { values, positionals } = parseArgs({
   options: {
     pr: { type: 'string' },
     repo: { type: 'string' },
+    diff: { type: 'string' },
+    'base-sha': { type: 'string' },
     format: { type: 'string', default: 'human' },
     'rule-pack': { type: 'string' },
     source: { type: 'string' },
@@ -76,6 +92,11 @@ const { values, positionals } = parseArgs({
     'no-ledger': { type: 'boolean', default: false },
     config: { type: 'string' },
     receipt: { type: 'string' },
+    port: { type: 'string', default: '8787' },
+    host: { type: 'string', default: '127.0.0.1' },
+    token: { type: 'string' },
+    topology: { type: 'string' },
+    'org-state': { type: 'string' },
     'rule-id': { type: 'string' },
     file: { type: 'string' },
     evidence: { type: 'string' },
@@ -99,8 +120,9 @@ try {
     process.exit(cmd && cmd !== 'help' ? 1 : 0);
   }
   if (cmd === 'review') {
-    if (!values.pr) {
-      console.error('Error: --pr is required\nUsage: sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov]');
+    const localMode = values.diff != null && values.diff !== '';
+    if (!values.pr && !localMode) {
+      console.error('Error: --pr is required (or use --diff <file|-> for local mode)\nUsage: sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov]');
       process.exit(1);
     }
     if (!VALID_FORMATS.includes(values.format)) {
@@ -116,7 +138,7 @@ try {
       process.exit(1);
     }
     await review({
-      pr: parseInt(values.pr, 10),
+      pr: values.pr != null ? parseInt(values.pr, 10) : 0,
       repo: values.repo,
       format: values.format,
       memoryPath: values['memory-path'],
@@ -125,7 +147,31 @@ try {
       ledgerPath: values['ledger-path'] || undefined,
       noLedger: values['no-ledger'] || false,
       configPath: values.config || undefined,
+      diffInput: localMode ? values.diff : undefined,
+      headSha: values['head-sha'] || undefined,
+      baseSha: values['base-sha'] || undefined,
     });
+  } else if (cmd === 'serve') {
+    const host = values.host || '127.0.0.1';
+    const token = values.token || process.env.SENTINEL_CONSOLE_TOKEN || undefined;
+    if (host !== '127.0.0.1' && host !== 'localhost' && !token) {
+      console.error('Refusing remote bind without a token: pass --token or set SENTINEL_CONSOLE_TOKEN');
+      process.exit(1);
+    }
+    const ghToken = process.env.GITHUB_TOKEN || undefined;
+    const handler = createConsoleServer({
+      ledgerPath: values['ledger-path'] || undefined,
+      memoryPath: values['memory-path'] || undefined,
+      configPath: values.config || undefined,
+      token,
+      repos: values.repo ? String(values.repo).split(',').map((s) => s.trim()).filter(Boolean) : [],
+      platform: ghToken ? createPlatform({ token: ghToken }) : undefined,
+      topologyPath: values.topology || undefined,
+      orgStatePath: values['org-state'] || undefined,
+    });
+    const port = parseInt(values.port || '8787', 10);
+    listenConsole(handler, { port, host });
+    console.error(`sentinel console on http://${host}:${port} (open in a browser)`);
   } else if (cmd === 'resolve') {
     if (!values['rule-id'] || !values.file) {
       console.error('Usage: sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>]');

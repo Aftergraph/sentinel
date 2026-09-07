@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-console-log-in-server-diff/positive.diff", "expect": ["no-console-log-in-server-diff"], "name": "style-console-log", "severity": "style"}

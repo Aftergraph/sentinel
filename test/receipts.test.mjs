@@ -9,7 +9,7 @@ import {
 } from '../lib/receipt.js';
 import {
   computeVerdict, summarizeDiff, computeDelta, globToRegExp, filterExcluded,
-  loadConfig, toGov, formatHuman,
+  loadConfig, toGov, formatHuman, analyzeDiff, localHeadSha, readDiffInput,
 } from '../lib/review.js';
 import { RULE_PACK_VERSION } from '../lib/rulepack.js';
 
@@ -242,4 +242,73 @@ test('formatHuman: summary, delta, receipt, excluded, stale', () => {
 test('receipt contract id is pinned', () => {
   assert.equal(RECEIPT_CONTRACT, 'sentinel.receipt/0.1');
   assert.equal(receiptIdFor({ a: 1 }).length, 64);
+});
+
+const EVAL_DIFF = `diff --git a/srv/app.js b/srv/app.js
+index 1111111..2222222 100644
+--- a/srv/app.js
++++ b/srv/app.js
+@@ -1,3 +1,4 @@
+ export function run(input) {
++  return eval(input);
+ }
+`;
+
+test('analyzeDiff: diff in, verdict + summary out, excludes honored', async () => {
+  const { result, summary } = await analyzeDiff({
+    diffText: EVAL_DIFF, pack: RULE_PACK_VERSION, excludePatterns: [],
+    resolutions: new Set(), headSha: 'H', baseSha: 'B',
+  });
+  assert.equal(result.verdict, 'DO_NOT_SHIP');
+  assert.equal(summary.files, 1);
+  assert.equal(summary.added, 1);
+
+  const scoped = await analyzeDiff({
+    diffText: EVAL_DIFF, pack: RULE_PACK_VERSION, excludePatterns: ['srv/**'],
+    resolutions: new Set(), headSha: 'H', baseSha: 'B',
+  });
+  assert.equal(scoped.result.verdict, 'SHIP');
+  assert.equal(scoped.result.excluded.length, 1);
+
+  const resolved = await analyzeDiff({
+    diffText: EVAL_DIFF, pack: RULE_PACK_VERSION, excludePatterns: [],
+    resolutions: new Set([`no-eval-with-dynamic-input\tsrv/app.js\t${(await import('../lib/memory.js')).fingerprint('return eval(input);')}`]),
+    headSha: 'H', baseSha: 'B',
+  });
+  assert.equal(resolved.result.verdict, 'SHIP');
+  assert.equal(resolved.result.silenced.length, 1);
+});
+
+test('localHeadSha: explicit wins, default is content-bound', () => {
+  assert.equal(localHeadSha('diff', 'abc123'), 'abc123');
+  const a = localHeadSha(EVAL_DIFF);
+  assert.match(a, /^local-[a-f0-9]{12}$/);
+  assert.equal(a, localHeadSha(EVAL_DIFF));
+  assert.notEqual(a, localHeadSha(EVAL_DIFF + ' '));
+});
+
+test('readDiffInput: file ok, missing throws', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-diff-'));
+  try {
+    const p = join(dir, 'change.diff');
+    writeFileSync(p, EVAL_DIFF);
+    assert.equal(readDiffInput(p), EVAL_DIFF);
+    assert.throws(() => readDiffInput(join(dir, 'nope.diff')), /Cannot read diff input/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('formatHuman color: ANSI only when asked', () => {
+  const res = computeVerdict(
+    [{ ruleId: 'no-eval-with-dynamic-input', file: 'a.js', line: 1, evidence: 'eval(x)' }],
+    new Set(),
+    { headSha: 'H', baseSha: 'B', rulePackVersion: RULE_PACK_VERSION },
+  );
+  const plain = formatHuman(res);
+  assert.ok(!plain.includes('\x1b['), 'piped output stays byte-clean');
+  assert.ok(plain.includes('DO NOT SHIP'));
+  const colored = formatHuman(res, { color: true });
+  assert.ok(colored.includes('\x1b[31m'), 'TTY gets red verdict');
+  assert.ok(colored.includes('DO NOT SHIP'));
 });

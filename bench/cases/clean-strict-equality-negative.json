@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-strict-equality/negative.diff", "expect": [], "name": "clean-strict-equality-negative", "note": "FP control: === and the == null idiom must not fire.", "severity": "correctness"}

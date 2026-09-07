@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-n-plus-one-queries-in-api-resolvers/positive.diff", "expect": ["no-n-plus-one-queries-in-api-resolvers"], "name": "performance-n-plus-one", "severity": "performance"}

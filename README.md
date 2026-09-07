@@ -36,11 +36,29 @@ sentinel review --pr 42 --format sarif > results.sarif
 sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
 sentinel review --pr 42 --rule-pack 1.0.0  # pinned original 6-rule pack
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
+git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
 sentinel --help
 ```
 
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
+
+Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
+`docs/mcp.md`), `apps/github` (S1 webhook → verdict card, mocked tests),
+and the platform vision (`docs/vision-software-verification-platform.md`,
+`docs/roadmap-S0-S10.md`, Cloudflare hosting in `docs/cloudflare.md`).
+
+## Console (local web UI, PWA-ready)
+
+```
+node bin/sentinel.js serve --port 8787
+# open http://127.0.0.1:8787 in a browser
+```
+
+Board, run, rules, config, ledger views over the same verdict engine —
+what the UI shows is byte-identical to the CLI (`docs/console-v1-design.md`).
+Binds 127.0.0.1 by default; remote bind requires `--token` or
+`SENTINEL_CONSOLE_TOKEN`.
 
 CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never treat 2 as failure):
 

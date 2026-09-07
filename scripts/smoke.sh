@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Smoke test: run rule tests and verify CLI scaffold still works
-node --test test/rules.test.mjs test/memory-sarif.test.mjs test/exact-head.test.mjs test/cli-contract.test.mjs test/receipts.test.mjs
+node --test test/rules.test.mjs test/memory-sarif.test.mjs test/exact-head.test.mjs test/cli-contract.test.mjs test/receipts.test.mjs test/mcp.test.mjs test/github-app.test.mjs
 
 node bin/sentinel.js review --pr 41 --repo Aftergraph/studio > /tmp/smoke.out 2>&1
 exit_code=$?

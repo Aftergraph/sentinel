@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-eval-with-dynamic-input/positive.diff", "expect": ["no-eval-with-dynamic-input"], "name": "security-eval", "severity": "security"}

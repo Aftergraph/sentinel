@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-where-on-delete-update/positive.diff", "expect": ["require-where-on-delete-update"], "name": "data-where-on-delete", "severity": "data"}

@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-private-key-in-diff/positive.diff", "expect": ["no-private-key-in-diff"], "name": "security-private-key", "severity": "security"}

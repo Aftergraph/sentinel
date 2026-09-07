@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-strict-equality/positive.diff", "expect": ["require-strict-equality"], "name": "correctness-strict-equality", "severity": "correctness"}

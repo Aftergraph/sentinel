@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/no-process-exit-in-server-code/positive.diff", "expect": ["no-process-exit-in-server-code"], "name": "reliability-process-exit", "severity": "reliability"}
