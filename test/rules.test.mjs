@@ -13,6 +13,7 @@ const RULES = [
   'no-unindexed-schema-migration-on-large-tables',
   'no-n-plus-one-queries-in-api-resolvers',
   'no-destructive-migration-without-backup-verification',
+  'no-swallowed-exceptions-in-critical-path',
   'require-dataloader-or-eager-load-for-nested-fetches',
 ];
 
