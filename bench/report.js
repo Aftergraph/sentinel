@@ -23,6 +23,8 @@ export function renderMarkdown(summaryOrEnvelope) {
   lines.push(`- recall: ${m.recall}`);
   lines.push(`- precision: ${m.precision}`);
   lines.push(`- false positives per case: ${m.fpPerCase}`);
+  const heldoutCount = summary.heldoutResults ? summary.heldoutResults.length : (summary.heldoutMetrics ? summary.heldoutMetrics.cases : 0);
+  lines.push(`- held-out: ${heldoutCount} cases (excluded from main score)`);
   lines.push('');
   lines.push('| case | hit | strict | fired | expected |');
   lines.push('|---|---|---|---|---|');
@@ -35,6 +37,16 @@ export function renderMarkdown(summaryOrEnvelope) {
     lines.push('## Misses');
     for (const r of misses) {
       lines.push(`- ${r.case}: missing [${r.missing.join(', ') || '—'}], unexpected [${r.falsePositives.join(', ') || '—'}]${r.reason ? ` (${r.reason})` : ''}`);
+    }
+  }
+  const heldout = summary.heldoutResults || [];
+  if (heldout.length > 0) {
+    lines.push('');
+    lines.push('## Held-out (excluded from score)');
+    lines.push('| case | hit | strict | fired | expected |');
+    lines.push('|---|---|---|---|---|');
+    for (const r of heldout) {
+      lines.push(`| ${r.case} | ${r.hit ? 'yes' : 'NO'} | ${r.strict ? 'yes' : 'no'} | ${r.fired.join(', ') || '—'} | ${r.expected.join(', ') || '—'} |`);
     }
   }
   return lines.join('\n') + '\n';
@@ -53,5 +65,6 @@ if (invoked) {
   const pack = process.argv[2] || RULE_PACK_VERSION;
   const summary = await writeReport({ pack, casesDir: join(HERE, 'cases'), outDir: HERE });
   const bad = summary.results.filter((r) => !r.hit).length;
-  console.log(`bench: ${summary.metrics.cases} cases, recall ${summary.metrics.recall}, precision ${summary.metrics.precision} (${bad} miss${bad === 1 ? '' : 'es'})`);
+  const heldoutCount = summary.heldoutResults ? summary.heldoutResults.length : 0;
+  console.log(`bench: ${summary.metrics.cases} cases, recall ${summary.metrics.recall}, precision ${summary.metrics.precision} (${bad} miss${bad === 1 ? '' : 'es'})` + (heldoutCount > 0 ? `, held-out ${heldoutCount} (excluded)` : ''));
 }

@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/bench-l4/clean-structured-clone.diff", "expect": [], "heldout": true, "name": "clean-structured-clone-negative", "note": "Clean control: structuredClone plus Object.entries/fromEntries must not fire.", "severity": "style"}

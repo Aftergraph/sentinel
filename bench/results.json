@@ -11,6 +11,33 @@
       "missing": []
     },
     {
+      "case": "clean-findings-prop-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "clean-optional-chaining-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "clean-params-get-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
       "case": "clean-secrets-cicd-negative",
       "fired": [],
       "expected": [],
@@ -117,6 +144,32 @@
       "expected": [
         "no-unauthenticated-api-endpoints",
         "no-unbounded-list-query-without-pagination"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "performance-map-query-singleline",
+      "fired": [
+        "no-n-plus-one-queries-in-api-resolvers"
+      ],
+      "expected": [
+        "no-n-plus-one-queries-in-api-resolvers"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "performance-map-query",
+      "fired": [
+        "no-n-plus-one-queries-in-api-resolvers"
+      ],
+      "expected": [
+        "no-n-plus-one-queries-in-api-resolvers"
       ],
       "hit": true,
       "strict": true,
@@ -243,6 +296,19 @@
       "missing": []
     },
     {
+      "case": "style-no-var-l4-positive",
+      "fired": [
+        "no-var-instead-of-let-const"
+      ],
+      "expected": [
+        "no-var-instead-of-let-const"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
       "case": "style-no-var",
       "fired": [
         "no-var-instead-of-let-const"
@@ -260,7 +326,7 @@
     "recall": 1,
     "precision": 1,
     "fpPerCase": 0,
-    "cases": 20,
+    "cases": 26,
     "rulesFired": {
       "require-strict-equality": 1,
       "no-destructive-migration-without-backup-verification": 1,
@@ -270,7 +336,7 @@
       "require-where-on-delete-update": 1,
       "no-unauthenticated-api-endpoints": 2,
       "no-unbounded-list-query-without-pagination": 2,
-      "no-n-plus-one-queries-in-api-resolvers": 1,
+      "no-n-plus-one-queries-in-api-resolvers": 3,
       "require-health-check-before-traffic-shift": 2,
       "require-lockfile-update-with-manifest-change": 1,
       "no-process-exit-in-server-code": 1,
@@ -279,7 +345,42 @@
       "no-eval-with-dynamic-input": 1,
       "no-private-key-in-diff": 1,
       "no-console-log-in-server-diff": 1,
-      "no-var-instead-of-let-const": 1
+      "no-var-instead-of-let-const": 2
+    }
+  },
+  "heldoutResults": [
+    {
+      "case": "clean-structured-clone-negative",
+      "fired": [],
+      "expected": [],
+      "hit": true,
+      "strict": true,
+      "heldout": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
+      "case": "security-eval-l4-positive",
+      "fired": [
+        "no-eval-with-dynamic-input"
+      ],
+      "expected": [
+        "no-eval-with-dynamic-input"
+      ],
+      "hit": true,
+      "strict": true,
+      "heldout": true,
+      "falsePositives": [],
+      "missing": []
+    }
+  ],
+  "heldoutMetrics": {
+    "recall": 1,
+    "precision": 1,
+    "fpPerCase": 0,
+    "cases": 2,
+    "rulesFired": {
+      "no-eval-with-dynamic-input": 1
     }
   }
 }

@@ -1,0 +1,10 @@
+diff --git a/src/clean-clone.js b/src/clean-clone.js
+index 1111111..2222222 100644
+--- a/src/clean-clone.js
++++ b/src/clean-clone.js
+@@ -1,3 +1,6 @@
+ export function cloneState(state) {
++  const copy = structuredClone(state);
++  const entries = Object.entries(copy?.nested ?? {});
++  return Object.fromEntries(entries);
+ }

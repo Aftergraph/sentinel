@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/bench-l4/positive-map-query-singleline.diff", "expect": ["no-n-plus-one-queries-in-api-resolvers"], "name": "performance-map-query-singleline", "severity": "performance"}

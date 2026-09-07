@@ -1,0 +1,9 @@
+diff --git a/console/handlers.mjs b/console/handlers.mjs
+index 1111111..2222222 100644
+--- a/console/handlers.mjs
++++ b/console/handlers.mjs
+@@ -1,3 +1,7 @@
++const handlers = {
++  show: (params) => render(params.get('view')),
++};
++register(handlers);

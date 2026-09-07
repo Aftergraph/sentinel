@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/bench-l4/clean-params-get.diff", "expect": [], "name": "clean-params-get-negative", "note": "FP trap: `.get()` on request params is inbound data, not a nested store fetch.", "severity": "performance"}

@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/bench-l4/clean-optional-chaining.diff", "expect": [], "name": "clean-optional-chaining-negative", "note": "Clean control: optional chaining, nullish coalescing, Array.at and Object.hasOwn must not fire.", "severity": "correctness"}
