@@ -8,6 +8,320 @@ import { createPlatform } from '../apps/github/platform.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync, execFileSync } from 'node:child_process';
+// Additive imports for the policy-gated review and verify-run surface.
+// Existing import lines above are untouched.
+import {
+  loadConfig as loadReviewConfig, environmentInfo as reviewEnvironmentInfo,
+  summarizeDiff as reviewSummarizeDiff, loadRules as loadReviewRules,
+  filterExcluded as reviewFilterExcluded, computeVerdict as reviewComputeVerdict,
+  computeDelta as reviewComputeDelta, formatHuman as reviewFormatHuman,
+  toJson as reviewToJson, toSarif as reviewToSarif, toGov as reviewToGov,
+  readDiffInput as reviewReadDiffInput, localHeadSha as reviewLocalHeadSha,
+} from '../lib/review.js';
+import {
+  defaultLedgerPath as receiptDefaultLedgerPath, loadLedger as receiptLoadLedger,
+  latestForRepoPr as receiptLatestForRepoPr, makeReceipt as receiptMakeReceipt,
+  appendLedger as receiptAppendLedger, detectSource as receiptDetectSource,
+} from '../lib/receipt.js';
+import { load as loadMemory } from '../lib/memory.js';
+import { ruleIdsForPack as cliRuleIdsForPack } from '../lib/rulepack.js';
+import { parsePolicy as parseCliPolicy } from '../lib/policy.js';
+import { createFinding as cliCreateFinding } from '../lib/finding.js';
+import { executePipeline as cliExecutePipeline } from '../lib/pipeline.js';
+
+// --- Additive helpers: policy-gated review + verify run (new flags only) ---
+
+const CLI_ANSI = { reset: '\x1b[0m', red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m' };
+
+// Same TTY-only convention as lib/review.js: color only on a live terminal,
+// never in pipes, so piped output stays byte-clean.
+function cliPaint(text, code, on) {
+  return on ? `${code}${text}${CLI_ANSI.reset}` : text;
+}
+
+function cliGhApi(endpoint, repo) {
+  const out = execSync(`gh api repos/${repo}/${endpoint}`, { encoding: 'utf8' });
+  return JSON.parse(out);
+}
+
+function cliResolveRepo(explicit) {
+  if (explicit) return explicit;
+  const remote = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
+  const m = remote.match(/github\.com[:\/]([^\/]+\/[^\/]+?)(?:\.git)?$/);
+  if (!m) throw new Error('Cannot resolve repo from origin remote');
+  return m[1];
+}
+
+// review --policy <file>: same pipeline as review(), except the verdict is
+// gated by the versioned policy file scoped to the reviewed repo
+// (meta.policy = { policies, repo, checks: {} }). A missing/unparseable
+// policy file fails closed with exit 2 and no verdict. Human output gains a
+// `policy: <name>@<hash8> <verdict>` line; --format json gains a top-level
+// policyEvaluation object; gov/sarif shapes are unchanged.
+async function reviewWithPolicy({
+  pr, repo: explicitRepo, format = 'human', memoryPath,
+  rulePackVersion, source, ledgerPath, noLedger = false, configPath,
+  diffInput, headSha: explicitHeadSha, baseSha: explicitBaseSha, policyPath,
+}) {
+  const localMode = diffInput != null && diffInput !== '';
+  if (!pr && !localMode) {
+    console.error('Error: --pr is required (or use --diff <file|-> for local mode)\nUsage: sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov]');
+    process.exit(1);
+  }
+  if (!VALID_FORMATS.includes(format)) {
+    console.error(`Error: --format must be one of ${VALID_FORMATS.join(', ')} (got "${format}")`);
+    process.exit(1);
+  }
+  if (rulePackVersion != null && !SUPPORTED_PACKS.includes(rulePackVersion)) {
+    console.error(`Error: --rule-pack must be one of ${SUPPORTED_PACKS.join(', ')} (got "${rulePackVersion}")`);
+    process.exit(1);
+  }
+  if (source != null && !SOURCE_ENUM.includes(source)) {
+    console.error(`Error: --source must be one of ${SOURCE_ENUM.join(', ')} (got "${source}")`);
+    process.exit(1);
+  }
+  // Fail closed before any verdict work: exit 2, nothing on stdout.
+  let policyText;
+  try {
+    policyText = readFileSync(policyPath, 'utf8');
+  } catch {
+    console.error(`Error: cannot read policy file: ${policyPath}`);
+    process.exit(2);
+  }
+  let policy;
+  try {
+    policy = parseCliPolicy(policyText);
+  } catch (err) {
+    console.error(`Error: invalid policy file ${policyPath}: ${err.message}`);
+    process.exit(2);
+  }
+
+  const resolvedSource = source || receiptDetectSource();
+  if (!SOURCE_ENUM.includes(resolvedSource)) {
+    throw new Error(`Unsupported source: ${resolvedSource} (expected one of ${SOURCE_ENUM.join(', ')})`);
+  }
+  const { config, configHash } = loadReviewConfig(configPath);
+  const pack = rulePackVersion || config.rulePack || RULE_PACK_VERSION;
+  const useColor = format === 'human' && Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+
+  let repo;
+  let headSha;
+  let baseShaStart;
+  let diffText;
+  if (localMode) {
+    diffText = reviewReadDiffInput(diffInput);
+    repo = explicitRepo || `local/${process.cwd().split(/[\\/]/).pop()}`;
+    headSha = reviewLocalHeadSha(diffText, explicitHeadSha);
+    baseShaStart = explicitBaseSha || 'local-base';
+  } else {
+    repo = cliResolveRepo(explicitRepo);
+    const prData = cliGhApi(`pulls/${pr}`, repo);
+    headSha = prData.head.sha;
+    baseShaStart = prData.base.sha;
+    diffText = execSync(
+      `gh api repos/${repo}/pulls/${pr} -H "Accept: application/vnd.github.v3.diff"`,
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
+    );
+  }
+
+  const ledgerFile = ledgerPath || receiptDefaultLedgerPath();
+  const chain = noLedger ? [] : receiptLoadLedger(ledgerFile);
+  const prev = noLedger ? null : receiptLatestForRepoPr(chain, repo, pr);
+  const prevHeadSha = prev && prev.headSha !== headSha ? prev.headSha : null;
+
+  const environment = reviewEnvironmentInfo();
+  const buildReceipt = (verdict, snap) => receiptMakeReceipt({
+    repo,
+    prNumber: pr,
+    headSha,
+    baseSha: baseShaStart,
+    rulePackVersion: pack,
+    verdict,
+    findings: snap,
+    counts: {
+      blocking: snap.blocking.length,
+      silenced: snap.silenced.length,
+      nonBlocking: snap.nonBlocking.length,
+      excluded: snap.excluded.length,
+    },
+    configHash,
+    source: resolvedSource,
+    environment,
+    prevReceiptId: prev ? prev.receipt_id : null,
+  });
+
+  let fresh = { fresh: true };
+  if (!localMode) {
+    const prDataCheck = cliGhApi(`pulls/${pr}`, repo);
+    const moved = [];
+    if (headSha !== prDataCheck.head.sha) moved.push(`head moved from ${headSha} to ${prDataCheck.head.sha}`);
+    if (baseShaStart !== prDataCheck.base.sha) moved.push(`base moved from ${baseShaStart} to ${prDataCheck.base.sha}`);
+    fresh = moved.length === 0 ? { fresh: true } : { fresh: false, reason: moved.join('; ') };
+  }
+  if (!fresh.fresh) {
+    const staleResult = {
+      verdict: 'STALE', headSha, baseSha: baseShaStart, rulePackVersion: pack,
+      blocking: [], silenced: [], nonBlocking: [], excluded: [],
+      checksPassed: cliRuleIdsForPack(pack).length,
+    };
+    const summary = reviewSummarizeDiff(diffText);
+    const receipt = buildReceipt('STALE', { blocking: [], silenced: [], nonBlocking: [], excluded: [] });
+    if (!noLedger) receiptAppendLedger(receipt, ledgerFile);
+    emitPolicy(staleResult, { summary, delta: null, receipt, staleReason: fresh.reason });
+    process.exit(2);
+  }
+
+  const resolutions = loadMemory(memoryPath);
+  // analyzeDiff body with meta.policy threaded through computeVerdict
+  // (analyzeDiff itself has no policy slot and lib/ is frozen).
+  const summary = reviewSummarizeDiff(diffText);
+  const rules = await loadReviewRules(pack);
+  const rawFindings = [];
+  for (const { check } of rules) rawFindings.push(...check(diffText));
+  rawFindings.sort((a, b) =>
+    a.file < b.file ? -1 : a.file > b.file ? 1 :
+    a.line - b.line || (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0)
+  );
+  const { included, excluded } = reviewFilterExcluded(rawFindings, config.exclude);
+  let result;
+  try {
+    result = reviewComputeVerdict(included, resolutions, {
+      headSha,
+      baseSha: baseShaStart,
+      rulePackVersion: pack,
+      policy: { policies: [policy], repo, checks: {} },
+    }, excluded);
+  } catch (err) {
+    console.error(`Error: policy evaluation failed: ${err.message}`);
+    process.exit(2);
+  }
+
+  const delta = prevHeadSha
+    ? { prevHeadSha, ...reviewComputeDelta((prev.findings || {}).blocking, result.blocking) }
+    : null;
+  const snapshot = {
+    blocking: result.blocking,
+    silenced: result.silenced,
+    nonBlocking: result.nonBlocking,
+    excluded: result.excluded,
+  };
+  const receipt = buildReceipt(result.verdict, snapshot);
+  if (!noLedger) receiptAppendLedger(receipt, ledgerFile);
+
+  emitPolicy(result, { summary, delta, receipt });
+
+  function emitPolicy(res, extra) {
+    const pv = res.policyEvaluation;
+    const hash8 = String((pv?.policyVersion || '').split('@')[1] || '').slice(0, 8);
+    const policyLine = `policy: ${policy.metadata.name}@${hash8} ${pv?.verdict ?? 'UNKNOWN'}`;
+    if (format === 'sarif') {
+      console.log(JSON.stringify(reviewToSarif(res), null, 2));
+    } else if (format === 'json') {
+      const out = reviewToJson(res, { repo, prNumber: pr, ...extra });
+      out.policyEvaluation = res.policyEvaluation;
+      console.log(JSON.stringify(out, null, 2));
+    } else if (format === 'gov') {
+      console.log(JSON.stringify(reviewToGov(res, {
+        repo, prNumber: pr, source: resolvedSource, environment, runId: extra.receipt.run_id,
+      }), null, 2));
+    } else {
+      console.log(reviewFormatHuman(res, {
+        summary: extra.summary, delta: extra.delta, receipt: extra.receipt,
+        staleReason: extra.staleReason, color: useColor,
+      }) + `\n${policyLine}`);
+    }
+  }
+
+  process.exit(result.verdict === 'SHIP' ? 0 : 1);
+}
+
+// verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile>:
+// execute the verify pipeline with a caller-supplied command table.
+// Unknown/misconfigured check types fail closed (exit 2) pre-exec — the
+// pipeline itself guarantees nothing executes. Human output prints the run
+// id, per-check PASS/FAIL/TIMEOUT, the finding transition, and sealed
+// evidence ids; --format json emits the same machine-readably.
+async function verifyRunCommand({ finding: findingSpec, repoDir, commands: commandsPath, format = 'human' }) {
+  if (format !== 'human' && format !== 'json') {
+    console.error(`Error: verify run --format must be human or json (got "${format}")`);
+    process.exit(1);
+  }
+  if (!findingSpec || !repoDir || !commandsPath) {
+    console.error('Usage: sentinel verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile> [--format human|json]');
+    process.exit(1);
+  }
+  const spec = String(findingSpec);
+  const first = spec.indexOf(':');
+  const last = spec.lastIndexOf(':');
+  const ruleId = first > 0 ? spec.slice(0, first) : '';
+  const file = first >= 0 && last > first ? spec.slice(first + 1, last) : '';
+  const line = Number.parseInt(spec.slice(last + 1), 10);
+  if (first < 0 || last <= first || !ruleId || !file || !Number.isInteger(line)) {
+    console.error('Usage: sentinel verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile> [--format human|json]');
+    process.exit(1);
+  }
+  let commands;
+  try {
+    commands = JSON.parse(readFileSync(commandsPath, 'utf8'));
+  } catch (err) {
+    console.error(`Error: cannot load commands file ${commandsPath}: ${err.message}`);
+    process.exit(2);
+  }
+  let targetSha;
+  try {
+    targetSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    console.error(`Error: cannot resolve HEAD in --repo-dir: ${repoDir}`);
+    process.exit(2);
+  }
+  if (!targetSha) {
+    console.error(`Error: cannot resolve HEAD in --repo-dir: ${repoDir}`);
+    process.exit(2);
+  }
+  const finding = cliCreateFinding({ ruleId, file, line, evidence: '', targetSha });
+  const fromState = finding.verification_state;
+  let out;
+  try {
+    out = await cliExecutePipeline({
+      finding,
+      repoDir,
+      targetSha,
+      commands,
+      env: { PATH: process.env.PATH || '' },
+    });
+  } catch (err) {
+    console.error(`Error: verify run failed: ${err.message}`);
+    process.exit(2);
+  }
+  const toState = finding.verification_state;
+  const checks = out.evidence.map((ev) => ({
+    type: ev.type,
+    status: String(ev.result).toUpperCase(),
+    exitCode: ev.exitCode,
+    evidenceId: ev.id,
+  }));
+  const useColor = format === 'human' && Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  if (format === 'json') {
+    console.log(JSON.stringify({
+      run: { id: out.run.id, status: out.run.status, checks },
+      finding: { id: finding.id, ruleId, file, line, from: fromState, to: toState, verification_state: toState },
+      evidence: out.evidence.map((ev) => ev.id),
+    }, null, 2));
+  } else {
+    const paintStatus = (s) => s === 'PASS' ? cliPaint(s, CLI_ANSI.green, useColor)
+      : s === 'FAIL' ? cliPaint(s, CLI_ANSI.red, useColor)
+      : cliPaint(s, CLI_ANSI.yellow, useColor);
+    const lines = [`run: ${out.run.id}`];
+    for (const c of checks) lines.push(`check ${c.type}: ${paintStatus(c.status)} (exit ${c.exitCode ?? 'n/a'})`);
+    lines.push(`finding: ${finding.id} ${fromState} -> ${toState}`);
+    for (const ev of out.evidence) lines.push(`evidence: ${ev.id}`);
+    console.log(lines.join('\n'));
+  }
+  process.exit(0);
+}
 
 function pkgVersion() {
   try {
@@ -28,6 +342,8 @@ Usage:
   sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
+  sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
+  sentinel verify run --finding <ruleId:file:line> --repo-dir <dir> --commands <jsonfile> [--format human|json]
   sentinel --help
 
 Exit codes (contract, never silently changed):
@@ -103,6 +419,10 @@ const { values, positionals } = parseArgs({
     'head-sha': { type: 'string' },
     reason: { type: 'string', default: 'manual' },
     'memory-path': { type: 'string' },
+    policy: { type: 'string' },
+    finding: { type: 'string' },
+    'repo-dir': { type: 'string' },
+    commands: { type: 'string' },
     help: { type: 'boolean', default: false },
     version: { type: 'boolean', default: false },
   }
@@ -119,7 +439,23 @@ try {
     printHelp();
     process.exit(cmd && cmd !== 'help' ? 1 : 0);
   }
-  if (cmd === 'review') {
+  if (cmd === 'review' && values.policy != null && values.policy !== '') {
+    await reviewWithPolicy({
+      pr: values.pr != null ? parseInt(values.pr, 10) : 0,
+      repo: values.repo,
+      format: values.format,
+      memoryPath: values['memory-path'],
+      rulePackVersion: values['rule-pack'] || undefined,
+      source: values.source || undefined,
+      ledgerPath: values['ledger-path'] || undefined,
+      noLedger: values['no-ledger'] || false,
+      configPath: values.config || undefined,
+      diffInput: values.diff != null && values.diff !== '' ? values.diff : undefined,
+      headSha: values['head-sha'] || undefined,
+      baseSha: values['base-sha'] || undefined,
+      policyPath: values.policy,
+    });
+  } else if (cmd === 'review') {
     const localMode = values.diff != null && values.diff !== '';
     if (!values.pr && !localMode) {
       console.error('Error: --pr is required (or use --diff <file|-> for local mode)\nUsage: sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov]');
@@ -187,6 +523,13 @@ try {
     });
     console.log(`Resolved: ${rec.ruleId} in ${rec.file} (fingerprint=${rec.fingerprint})`);
     process.exit(0);
+  } else if (cmd === 'verify' && positionals[1] === 'run') {
+    await verifyRunCommand({
+      finding: values.finding,
+      repoDir: values['repo-dir'],
+      commands: values.commands,
+      format: values.format,
+    });
   } else if (cmd === 'verify') {
     if (!values.receipt) {
       console.error('Usage: sentinel verify --receipt <path>');

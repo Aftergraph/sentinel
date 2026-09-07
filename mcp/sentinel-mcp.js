@@ -15,6 +15,9 @@ import { analyzeDiff, localHeadSha } from '../lib/review.js';
 import { RULE_PACK_VERSION, SUPPORTED_PACKS, SEVERITY_MAP, BLOCKING_SEVERITIES, ruleIdsForPack } from '../lib/rulepack.js';
 import { verifyReceipt, loadLedger, latestForRepoPr, defaultLedgerPath } from '../lib/receipt.js';
 import { loadConfig } from '../lib/review.js';
+import { HYPOTHESIS, VERIFYING, CONFIRMED, NOT_REPRODUCED, INDETERMINATE, DISMISSED, TERMINAL_STATES } from '../lib/finding.js';
+import { planChecks, severityOf } from '../lib/verify.js';
+import { parsePolicy, resolvePolicy, evaluatePolicy } from '../lib/policy.js';
 
 export const SERVER_VERSION = (() => {
   try {
@@ -80,6 +83,48 @@ export const TOOLS = [
       properties: {
         path: { type: 'string', description: 'Config path; defaults to ./sentinel.config.json.' },
       },
+    },
+  },
+  {
+    name: 'sentinel_finding_lifecycle',
+    description: 'Explain finding verification_state transitions (read-only; never mutates). list-states shows legal states; validate-transition checks if from->to is legal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        finding: { type: 'object', description: 'Finding object with verification_state.' },
+        action: { type: 'string', description: 'validate-transition|list-states.' },
+        to: { type: 'string', description: 'Target state for validate-transition.' },
+        reason: { type: 'string', description: 'Reason for DISMISSED transitions.' },
+        actor: { type: 'string', description: 'Actor for transition rules (ai may not transition).' },
+      },
+    },
+  },
+  {
+    name: 'sentinel_verify_plan',
+    description: 'Plan verification checks for a rule (read-only planning via planChecks; never executes checks).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ruleId: { type: 'string', description: 'Rule id to plan checks for.' },
+        severity: { type: 'string', description: 'Override severity (defaults via rule pack).' },
+      },
+      required: ['ruleId'],
+    },
+  },
+  {
+    name: 'sentinel_policy_evaluate',
+    description: 'Parse, scope-resolve, and evaluate a VerificationPolicy (read-only; malformed policy returns isError, never throws).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        policyText: { type: 'string', description: 'Policy YAML text.' },
+        repo: { type: 'string', description: 'Repo owner/name for scope resolution.' },
+        path: { type: 'string', description: 'File path for scope resolution.' },
+        findings: { type: 'array', items: { type: 'object' }, description: 'Findings to evaluate.' },
+        checks: { type: 'object', description: 'Check results map.' },
+        headSha: { type: 'string', description: 'Commit SHA under evaluation.' },
+      },
+      required: ['policyText'],
     },
   },
 ];
@@ -153,6 +198,120 @@ export async function dispatch(name, args = {}, ctx = {}) {
     case 'sentinel_config_show': {
       const { config, configHash, path } = loadConfig(args.path);
       return text({ config, configHash, path });
+    }
+    case 'sentinel_finding_lifecycle': {
+      // Read-only explanation of lib/finding.js transitions. Never mutates
+      // the finding and never appends audit events (no transition() call).
+      const action = args.action || 'list-states';
+      const finding = args.finding ?? null;
+      const from = (typeof finding === 'string' ? finding : null)
+        ?? finding?.verification_state ?? finding?.verificationState
+        ?? args.from ?? args.currentState ?? args.state ?? args.current ?? null;
+      const LEGAL = {
+        [HYPOTHESIS]: [VERIFYING, DISMISSED],
+        [VERIFYING]: [CONFIRMED, NOT_REPRODUCED, INDETERMINATE, DISMISSED],
+      };
+      const ALL_STATES = [HYPOTHESIS, VERIFYING, CONFIRMED, NOT_REPRODUCED, INDETERMINATE, DISMISSED];
+      const TERMINALS = [...TERMINAL_STATES];
+      if (action === 'list-states' || action === 'list_states' || action === 'list') {
+        const allowedNext = from && LEGAL[from] ? [...LEGAL[from]] : [];
+        return text({
+          states: ALL_STATES,
+          terminalStates: TERMINALS,
+          transitions: LEGAL,
+          currentState: from,
+          allowedNext,
+          rulePackVersion: RULE_PACK_VERSION,
+          policyVersion: null,
+        });
+      }
+      if (action === 'validate-transition' || action === 'validate_transition' || action === 'validate') {
+        const to = args.to ?? args.toState ?? args.target ?? args.targetState ?? args.next ?? args.nextState ?? args.to_state ?? null;
+        if (!from || !to) throw new Error('validate-transition needs finding.verification_state and "to" state.');
+        const actor = args.actor ?? finding?.actor ?? 'human';
+        let legal = true;
+        let explanation = `${from} -> ${to} is legal.`;
+        if (actor === 'ai') {
+          legal = false;
+          explanation = "illegal transition: actor 'ai' may not transition verification_state (may only set confidence/suggest).";
+        } else if (TERMINAL_STATES.has(from)) {
+          legal = false;
+          explanation = `illegal transition: ${from} is terminal, accepts no transitions.`;
+        } else if (!LEGAL[from] || !LEGAL[from].includes(to)) {
+          legal = false;
+          explanation = `illegal transition: ${from} -> ${to}.`;
+        } else if (to === DISMISSED) {
+          const reason = args.reason ?? finding?.reason ?? args.dismissReason ?? null;
+          if (typeof reason !== 'string' || reason.trim() === '') {
+            legal = false;
+            explanation = 'illegal transition: transition to DISMISSED requires a reason.';
+          }
+        }
+        return text({
+          from,
+          to,
+          legal,
+          explanation,
+          allowedNext: LEGAL[from] ? [...LEGAL[from]] : [],
+          rulePackVersion: RULE_PACK_VERSION,
+          policyVersion: null,
+        });
+      }
+      throw new Error(`Unknown action for sentinel_finding_lifecycle: ${action} (expected validate-transition|list-states).`);
+    }
+    case 'sentinel_verify_plan': {
+      // Read-only planning via planChecks only — never creates/runs checks.
+      const ruleId = args.ruleId ?? args.finding?.ruleId ?? null;
+      if (!ruleId || typeof ruleId !== 'string') throw new Error('sentinel_verify_plan needs ruleId as a non-empty string.');
+      const severityInput = args.severity ?? args.finding?.severity ?? undefined;
+      const findingLike = severityInput === undefined ? { ruleId } : { ruleId, severity: severityInput };
+      const checks = planChecks(findingLike, args.policy ?? null);
+      return text({
+        ruleId,
+        severity: severityOf(findingLike, args.policy ?? null),
+        checks,
+        rulePackVersion: RULE_PACK_VERSION,
+        policyVersion: null,
+      });
+    }
+    case 'sentinel_policy_evaluate': {
+      // Parse + resolve + evaluate. Malformed input returns isError (never throws).
+      try {
+        const policyText = args.policyText ?? args.policy ?? args.yaml ?? args.policyYaml ?? null;
+        if (typeof policyText !== 'string' || policyText.trim() === '') {
+          return toolError('sentinel_policy_evaluate needs policyText as a non-empty string.');
+        }
+        const repo = args.repo;
+        const path = args.path;
+        const findings = args.findings ?? [];
+        const checks = args.checks ?? {};
+        const headSha = args.headSha ?? 'unknown';
+        let policy;
+        try {
+          policy = parsePolicy(policyText);
+        } catch (err) {
+          return toolError(err.message);
+        }
+        try {
+          policy = resolvePolicy([policy], { repo, path });
+        } catch (err) {
+          return toolError(err.message);
+        }
+        try {
+          const result = evaluatePolicy(policy, { findings, checks, headSha });
+          return text({
+            allowed: result.allowed,
+            verdict: result.verdict,
+            reasons: result.reasons,
+            policyVersion: result.policyVersion,
+            rulePackVersion: RULE_PACK_VERSION,
+          });
+        } catch (err) {
+          return toolError(err.message);
+        }
+      } catch (err) {
+        return toolError(err.message);
+      }
     }
     default:
       throw new Error(`Unknown tool: ${name}`);

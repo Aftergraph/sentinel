@@ -36,6 +36,7 @@ import {
   BLOCKING_SEVERITIES,
   ruleIdsForPack,
 } from '../lib/rulepack.js';
+import { createOrgStore } from '../lib/org-store.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -175,7 +176,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath } = opts;
   // v1b mode only when governance files are pointed at; otherwise the
   // v1a /api/repos shape is returned byte-identically (no headSource).
   const orgWide = Boolean(topologyPath || orgStatePath);
@@ -252,6 +253,57 @@ export function createConsoleServer(opts = {}) {
     for (const e of topoEntries) push(e.repo, 'topology');
     for (const repo of latest.keys()) push(repo, 'ledger');
     return out;
+  }
+
+  // Org scoping (display only — resolved from the org-store file pointed
+  // at by orgStorePath; the console never mutates org state and emits no
+  // audit events for scoped reads). Without orgStorePath every org input
+  // is ignored and the v1a/v1b shapes are returned byte-identically. The
+  // store file is re-read per scoped request so seeds written before or
+  // after boot are both visible.
+  const orgStorePathSet = typeof orgStorePath === 'string' && orgStorePath.trim() !== '';
+
+  function isWellFormedOrgId(id) {
+    return typeof id === 'string' && /^org_[A-Za-z0-9_-]+$/.test(id);
+  }
+
+  function loadOrgStore() {
+    try {
+      return createOrgStore(orgStorePath);
+    } catch (err) {
+      throw new HttpError(500, err.message);
+    }
+  }
+
+  // Rows for one org: linked fullNames enriched with the same
+  // head/verdict data as listRepos(). Linked-but-never-reviewed repos
+  // still appear as bare { repo } rows.
+  function orgRepoRows(store, orgId) {
+    const names = [];
+    const seen = new Set();
+    for (const r of store.reposForOrg(orgId)) {
+      const name = r && typeof r.fullName === 'string' ? r.fullName : null;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
+    const byName = new Map();
+    for (const row of listRepos()) {
+      if (row && typeof row.repo === 'string' && !byName.has(row.repo)) byName.set(row.repo, row);
+    }
+    return names.map((name) => byName.get(name) || { repo: name });
+  }
+
+  // Shared ?org= handling for /api/repos and /api/overview. Returns null
+  // when unscoped (no param, or no store configured — legacy behavior).
+  // Throws 400 on malformed or unknown ids (query scope never 404s, so
+  // org existence cannot be confused with a missing route).
+  function resolveOrgQuery(orgParam) {
+    if (orgParam === null || !orgStorePathSet) return null;
+    if (!isWellFormedOrgId(orgParam)) throw new HttpError(400, 'malformed org id');
+    const store = loadOrgStore();
+    if (!store.getOrg(orgParam)) throw new HttpError(400, 'unknown org');
+    return { store, rows: orgRepoRows(store, orgParam) };
   }
 
   function finishReview({ repo, prNumber, headSha, baseSha, pack, configHash, result, summary }) {
@@ -418,8 +470,9 @@ export function createConsoleServer(opts = {}) {
   // open = tracked repos; blocked/stale = latest-verdict counts;
   // critical = outstanding blocking findings across latest receipts;
   // confidence = SHIP share of repos with a verdict (1 when none yet).
-  function buildOverview() {
-    const repos = listRepos();
+  function buildOverview(scopedRows = null) {
+    const repos = scopedRows || listRepos();
+    const scopedSet = scopedRows ? new Set(scopedRows.map((r) => r.repo)) : null;
     const chain = noLedger ? [] : loadLedger(ledgerPath);
     const latest = new Map();
     for (const r of chain) {
@@ -456,7 +509,7 @@ export function createConsoleServer(opts = {}) {
       }
     }
     needsAttention.sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
-    const recentVerdicts = chain.slice(-10).reverse().map((r) => ({
+    const recentVerdicts = chain.filter((r) => !scopedSet || (r && scopedSet.has(r.repo))).slice(-10).reverse().map((r) => ({
       repo: r.repo,
       prNumber: r.prNumber ?? null,
       verdict: r.verdict,
@@ -789,7 +842,30 @@ export function createConsoleServer(opts = {}) {
         return send(200, { ok: true, version: VERSION, pack: RULE_PACK_VERSION });
       }
       if (method === 'GET' && path === '/api/repos') {
-        return send(200, { repos: listRepos() });
+        const scope = resolveOrgQuery(url.searchParams.get('org'));
+        return send(200, { repos: scope ? scope.rows : listRepos() });
+      }
+      if (method === 'GET' && path === '/api/orgs') {
+        if (!orgStorePathSet) return send(404, { error: 'not found' });
+        const store = loadOrgStore();
+        return send(200, { orgs: store.listOrgs().map((o) => ({ id: o.id, name: o.name })) });
+      }
+      if (method === 'GET' && path.startsWith('/api/orgs/')) {
+        if (!orgStorePathSet) return send(404, { error: 'not found' });
+        let parts;
+        try {
+          parts = path.slice('/api/orgs/'.length).split('/').filter((s) => s.length > 0)
+            .map((s) => decodeURIComponent(s));
+        } catch {
+          throw new HttpError(400, 'malformed org path');
+        }
+        // 404 (not 403) on unknown org to prevent enumeration.
+        if (parts.length !== 2 || parts[1] !== 'repos') return send(404, { error: 'not found' });
+        const orgId = parts[0];
+        if (!isWellFormedOrgId(orgId)) throw new HttpError(400, 'malformed org id');
+        const store = loadOrgStore();
+        if (!store.getOrg(orgId)) throw new HttpError(404, 'unknown org');
+        return send(200, { repos: orgRepoRows(store, orgId) });
       }
       if (method === 'GET' && path === '/api/ledger') {
         const repo = url.searchParams.get('repo');
@@ -813,7 +889,8 @@ export function createConsoleServer(opts = {}) {
         return send(200, startVerifyRun(await readJson(req)));
       }
       if (method === 'GET' && path === '/api/overview') {
-        return send(200, buildOverview());
+        const scope = resolveOrgQuery(url.searchParams.get('org'));
+        return send(200, buildOverview(scope ? scope.rows : null));
       }
       if (method === 'GET' && (path === '/api/pr' || path.startsWith('/api/pr/'))) {
         const parsed = parsePrPath(path);
