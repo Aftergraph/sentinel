@@ -1,0 +1,69 @@
+diff --git a/k8s/api-deploy.yaml b/k8s/api-deploy.yaml
+index 1111111..2222222 100644
+--- a/k8s/api-deploy.yaml
++++ b/k8s/api-deploy.yaml
+@@ -1,5 +1,10 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: api
++  replicas: 3
++  strategy:
++    type: Recreate
++    template:
++      spec:
++        containers:
++        - image: registry/api:v3
+diff --git a/k8s/web-deploy.yaml b/k8s/web-deploy.yaml
+index 3333333..4444444 100644
+--- a/k8s/web-deploy.yaml
++++ b/k8s/web-deploy.yaml
+@@ -1,5 +1,10 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: web
++  replicas: 1
++  strategy:
++    type: RollingUpdate
++    template:
++      spec:
++        containers:
++        - image: registry/web:v2
+diff --git a/k8s/job.yaml b/k8s/job.yaml
+new file mode 100644
+index 0000000..6666666
+--- /dev/null
++++ b/k8s/job.yaml
+@@ -0,0 +1,7 @@
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: nightly
++  replicas: 1
++  strategy:
++    type: Recreate
+diff --git a/k8s/dev-deploy.yaml b/k8s/dev-deploy.yaml
+index 7777777..8888888 100644
+--- a/k8s/dev-deploy.yaml
++++ b/k8s/dev-deploy.yaml
+@@ -1,4 +1,7 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: dev
++  replicas: 1
++  strategy:
++    type: Recreate
+diff --git a/k8s/commented.yaml b/k8s/commented.yaml
+index 9999999..aaaaaaa 100644
+--- a/k8s/commented.yaml
++++ b/k8s/commented.yaml
+@@ -1,4 +1,7 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: commented
++#  replicas: 1
++#  strategy:
++#    type: Recreate

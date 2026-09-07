@@ -32,6 +32,7 @@ const RULES = [
   'require-retry-with-backoff-for-transient-failures',
   'require-health-check-before-traffic-shift',
   'require-foreign-key-constraints-on-related-tables',
+  'no-recreate-single-replica-deployment',
 ];
 
 for (const ruleId of RULES) {

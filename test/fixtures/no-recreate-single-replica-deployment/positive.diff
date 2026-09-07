@@ -1,0 +1,16 @@
+diff --git a/k8s/api-deploy.yaml b/k8s/api-deploy.yaml
+index 1111111..2222222 100644
+--- a/k8s/api-deploy.yaml
++++ b/k8s/api-deploy.yaml
+@@ -1,5 +1,10 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: api
++  replicas: 1
++  strategy:
++    type: Recreate
++    template:
++      spec:
++        containers:
++        - image: registry/api:v3

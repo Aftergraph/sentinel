@@ -15,13 +15,14 @@ import {
   ruleIdsForPack,
 } from '../lib/rulepack.js';
 
-test('rulepack: v1.0.0 locks 6, v1.1.0 locks 20, v1.2.0 locks 21, v1.3.0 locks 22, v1.4.0 locks 23, default pack carries 24', () => {
+test('rulepack: v1.0.0 locks 6, v1.1.0 locks 20, v1.2.0 locks 21, v1.3.0 locks 22, v1.4.0 locks 23, v1.5.0 locks 24, default pack carries 25', () => {
   assert.equal(ruleIdsForPack('1.0.0').length, 6);
   assert.equal(ruleIdsForPack('1.1.0').length, 20);
   assert.equal(ruleIdsForPack('1.2.0').length, 21);
   assert.equal(ruleIdsForPack('1.3.0').length, 22);
   assert.equal(ruleIdsForPack('1.4.0').length, 23);
-  assert.equal(ruleIdsForPack(RULE_PACK_VERSION).length, 24);
+  assert.equal(ruleIdsForPack('1.5.0').length, 24);
+  assert.equal(ruleIdsForPack(RULE_PACK_VERSION).length, 25);
   assert.ok(SUPPORTED_PACKS.includes('1.0.0'));
   assert.ok(SUPPORTED_PACKS.includes(RULE_PACK_VERSION));
   assert.throws(() => ruleIdsForPack('9.9.9'), /Unsupported rule pack/);
@@ -41,7 +42,8 @@ test('loadRules: pack versions resolve to matching rule counts', async () => {
   assert.equal((await loadRules('1.2.0')).length, 21);
   assert.equal((await loadRules('1.3.0')).length, 22);
   assert.equal((await loadRules('1.4.0')).length, 23);
-  assert.equal(v11.length, 24);
+  assert.equal((await loadRules('1.5.0')).length, 24);
+  assert.equal(v11.length, 25);
   await assert.rejects(() => loadRules('9.9.9'), /Unsupported rule pack/);
 });
 
@@ -71,7 +73,7 @@ test('verdict: checksPassed follows the requested pack', () => {
   const r10 = computeVerdict([], new Set(), { headSha: 'h', baseSha: 'b', rulePackVersion: '1.0.0' });
   const r11 = computeVerdict([], new Set(), { headSha: 'h', baseSha: 'b', rulePackVersion: RULE_PACK_VERSION });
   assert.equal(r10.checksPassed, 6);
-  assert.equal(r11.checksPassed, 24);
+  assert.equal(r11.checksPassed, 25);
 });
 
 test('toJson: Review + Verdict + Findings shape per data-model-v0', () => {
@@ -89,7 +91,7 @@ test('toJson: Review + Verdict + Findings shape per data-model-v0', () => {
   assert.equal(json.verdict.decision, 'DO_NOT_SHIP');
   assert.equal(json.findings.blocking.length, 1);
   assert.ok(Array.isArray(json.findings.nonBlocking));
-  assert.equal(json.checksPassed, 24);
+  assert.equal(json.checksPassed, 25);
 });
 
 test('toSarif: style maps to note, correctness maps to error', () => {
