@@ -7,11 +7,11 @@ hits **iff** every expected rule fires **and** no unexpected rule fires
 expected — the runner is never weakened to make a pack pass.
 
 ```bash
-node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.1.0)
+node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.2.0)
 node --test test/bench.test.mjs
 ```
 
-Current score (v1.1.0): **16 cases, recall 1.0, precision 1.0, 0 misses.**
+Current score (v1.2.0): **16 cases, recall 1.0, precision 1.0, 0 misses.**
 
 Metrics are pure counts (recall, precision, FP-per-case, rules-fired
 distribution). No LLM, no timing, no network. Scores are data: a low
@@ -45,9 +45,12 @@ secrets-cicd, strict-equality, sync-io negatives.
 
 ## Strictness and the known overlap
 
-Two fixtures cross-fire under the full pack and both firings are correct
-per `docs/rulepack-v1.1.md` ("Known true-positive overlap"): a bare
+Three fixtures cross-fire under the full pack and every firing is correct.
+Two per `docs/rulepack-v1.1.md` ("Known true-positive overlap"): a bare
 unauthenticated collection route fires `no-unauthenticated-api-endpoints`
-and `no-unbounded-list-query-without-pagination`. Both overlap cases
+and `no-unbounded-list-query-without-pagination`. Third per
+`docs/rulepack-v1.2.md`: a migration that drops a column with no backup
+reference fires both `no-destructive-sql-without-guard` and
+`no-destructive-migration-without-backup-verification`. All overlap cases
 expect both rules and stay strict — verified empirically (every other
 positive fires exactly its own rule; every negative fires nothing).

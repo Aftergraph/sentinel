@@ -12,7 +12,7 @@ import { dirname } from 'node:path';
 
 const CASES = join(dirname(fileURLToPath(import.meta.url)), '..', 'bench', 'cases');
 
-test('bench: v1.1.0 pack scores strict on every shipped case', async () => {
+test(`bench: pack ${RULE_PACK_VERSION} scores strict on every shipped case`, async () => {
   const { results, metrics } = await runBench({ pack: RULE_PACK_VERSION, casesDir: CASES });
   assert.ok(results.length >= 12, `expected >=12 cases, got ${results.length}`);
   const misses = results.filter((r) => !r.hit);

@@ -1,0 +1,23 @@
+diff --git a/src/api/resolvers.js b/src/api/resolvers.js
+new file mode 100644
+index 0000000..5d6e7f8
+--- /dev/null
++++ b/src/api/resolvers.js
+@@ -0,0 +1,9 @@
++export async function getOrder(id) {
++  try {
++    return await db.orders.findById(id);
++  } catch (err) {
++    logger.warn('order fetch failed', { id });
++    throw err;
++  }
++}
+diff --git a/docs/notes.md b/docs/notes.md
+new file mode 100644
+index 0000000..9a8b7c6
+--- /dev/null
++++ b/docs/notes.md
+@@ -0,0 +1,3 @@
++# Notes
++
++Example: try { x(); } catch (err) {}

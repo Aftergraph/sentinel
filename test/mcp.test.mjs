@@ -7,7 +7,7 @@ import {
   TOOLS, dispatch, handleMessage, createFramer, frame,
 } from '../mcp/sentinel-mcp.js';
 import { makeReceipt, appendLedger } from '../lib/receipt.js';
-import { RULE_PACK_VERSION } from '../lib/rulepack.js';
+import { RULE_PACK_VERSION, ruleIdsForPack } from '../lib/rulepack.js';
 
 const EVAL_DIFF = `diff --git a/srv/app.js b/srv/app.js
 index 1111111..2222222 100644
@@ -80,7 +80,7 @@ test('mcp: PR mode validates repo shape before shelling out', async () => {
 test('mcp: rules list carries severities + blocking flags', async () => {
   const out = await dispatch('sentinel_rules_list', {});
   const body = JSON.parse(out.content[0].text);
-  assert.equal(body.rules.length, 20);
+  assert.equal(body.rules.length, ruleIdsForPack(RULE_PACK_VERSION).length);
   const evalRule = body.rules.find((r) => r.id === 'no-eval-with-dynamic-input');
   assert.equal(evalRule.severity, 'security');
   assert.equal(evalRule.blocks, true);

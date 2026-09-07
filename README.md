@@ -2,7 +2,7 @@
 
 **Product core:** Sentinel by Aftergraph is a verified code-review product that turns pull requests into merge-ready verdicts.
 
-**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.1.0: 20 deterministic rules, see `docs/rulepack-v1.1.md`).
+**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.2.0: 21 deterministic rules, see `docs/rulepack-v1.2.md`).
 
 ## Why Sentinel exists
 

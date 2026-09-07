@@ -1,1 +1,10 @@
-{"diffFile": "test/fixtures/no-destructive-sql-without-guard/positive.diff", "expect": ["no-destructive-sql-without-guard"], "name": "data-destructive-sql", "severity": "data"}
+{
+  "diffFile": "test/fixtures/no-destructive-sql-without-guard/positive.diff",
+  "expect": [
+    "no-destructive-sql-without-guard",
+    "no-destructive-migration-without-backup-verification"
+  ],
+  "name": "data-destructive-sql",
+  "severity": "data",
+  "note": "Known true-positive overlap: DROP COLUMN in a migration with no backup reference fires both rules (cf. rulepack-v1.1 overlap precedent)."
+}

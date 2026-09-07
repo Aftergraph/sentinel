@@ -1,4 +1,4 @@
-# SentinelBench report — pack `1.1.0`
+# SentinelBench report — pack `1.2.0`
 
 - cases: 16
 - recall: 1
@@ -12,7 +12,7 @@
 | clean-strict-equality-negative | yes | yes | — | — |
 | clean-sync-io-negative | yes | yes | — | — |
 | correctness-strict-equality | yes | yes | require-strict-equality | require-strict-equality |
-| data-destructive-sql | yes | yes | no-destructive-sql-without-guard | no-destructive-sql-without-guard |
+| data-destructive-sql | yes | yes | no-destructive-migration-without-backup-verification, no-destructive-sql-without-guard | no-destructive-migration-without-backup-verification, no-destructive-sql-without-guard |
 | data-where-on-delete | yes | yes | require-where-on-delete-update | require-where-on-delete-update |
 | overlap-unauthenticated-route | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |
 | overlap-unbounded-list | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |

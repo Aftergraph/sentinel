@@ -1,0 +1,3 @@
+# Generated bench artifacts (reproduce with `node bench/report.js`)
+bench/results.json
+bench/REPORT.md

@@ -1,5 +1,5 @@
 {
-  "pack": "1.1.0",
+  "pack": "1.2.0",
   "results": [
     {
       "case": "clean-eval-negative",
@@ -53,9 +53,11 @@
     {
       "case": "data-destructive-sql",
       "fired": [
+        "no-destructive-migration-without-backup-verification",
         "no-destructive-sql-without-guard"
       ],
       "expected": [
+        "no-destructive-migration-without-backup-verification",
         "no-destructive-sql-without-guard"
       ],
       "hit": true,
@@ -205,6 +207,7 @@
     "cases": 16,
     "rulesFired": {
       "require-strict-equality": 1,
+      "no-destructive-migration-without-backup-verification": 1,
       "no-destructive-sql-without-guard": 1,
       "require-where-on-delete-update": 1,
       "no-unauthenticated-api-endpoints": 2,

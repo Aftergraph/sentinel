@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { createConsoleServer } from '../console/server.js';
 import { makeReceipt, appendLedger } from '../lib/receipt.js';
-import { RULE_PACK_VERSION } from '../lib/rulepack.js';
+import { RULE_PACK_VERSION, ruleIdsForPack } from '../lib/rulepack.js';
 
 const EVAL_DIFF = `diff --git a/srv/app.js b/srv/app.js
 index 1111111..2222222 100644
@@ -170,7 +170,7 @@ test('console: rules and config surfaces', async () => {
   const c = await boot();
   try {
     const rules = await c.call('GET', '/api/rules');
-    assert.equal(rules.json.rules.length, 20);
+    assert.equal(rules.json.rules.length, ruleIdsForPack(RULE_PACK_VERSION).length);
     const cfg = await c.call('GET', '/api/config');
     assert.deepEqual(cfg.json.config, { rulePack: null, exclude: [] });
     const put = await c.call('PUT', '/api/config', { rulePack: '1.0.0', exclude: ['docs/**'] });
@@ -187,7 +187,7 @@ test('console: token gate guards api but not healthz', async () => {
     assert.equal((await c.call('GET', '/api/rules')).status, 401);
     const authed = await c.call('GET', '/api/rules', undefined, { authorization: 'Bearer tok' });
     assert.equal(authed.status, 200);
-    assert.equal(authed.json.rules.length, 20);
+    assert.equal(authed.json.rules.length, ruleIdsForPack(RULE_PACK_VERSION).length);
   } finally { await c.close(); }
 });
 

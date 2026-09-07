@@ -11,7 +11,7 @@ import {
   computeVerdict, summarizeDiff, computeDelta, globToRegExp, filterExcluded,
   loadConfig, toGov, formatHuman, analyzeDiff, localHeadSha, readDiffInput,
 } from '../lib/review.js';
-import { RULE_PACK_VERSION } from '../lib/rulepack.js';
+import { RULE_PACK_VERSION, ruleIdsForPack } from '../lib/rulepack.js';
 
 function snap(blocking = [], extra = {}) {
   return {
@@ -193,7 +193,7 @@ test('toGov: per-rule results plus verdict entry', () => {
   });
   const gov = toGov(res, { repo: 'o/r', prNumber: 7, source: 'manual', environment: { runner: 't', versions: {} }, runId: 'r1' });
   assert.equal(gov.sha, 'h'.repeat(40));
-  assert.equal(gov.results.length, 21);
+  assert.equal(gov.results.length, ruleIdsForPack(RULE_PACK_VERSION).length + 1);
   const byCtx = Object.fromEntries(gov.results.map((r) => [r.context, r.status]));
   assert.equal(byCtx['sentinel/no-eval-with-dynamic-input'], 'failure');
   assert.equal(byCtx['sentinel/no-var-instead-of-let-const'], 'success');
@@ -209,7 +209,7 @@ test('toGov: per-rule results plus verdict entry', () => {
 test('toGov: STALE maps to a single cancelled entry', () => {
   const stale = {
     verdict: 'STALE', headSha: 'h'.repeat(40), baseSha: 'b'.repeat(40),
-    rulePackVersion: RULE_PACK_VERSION, blocking: [], silenced: [], nonBlocking: [], excluded: [], checksPassed: 20,
+    rulePackVersion: RULE_PACK_VERSION, blocking: [], silenced: [], nonBlocking: [], excluded: [], checksPassed: 21,
   };
   const gov = toGov(stale, { repo: 'o/r', prNumber: 7, source: 'manual', environment: null, runId: 'r3' });
   assert.deepEqual(gov.results, [{ context: 'sentinel/review', status: 'cancelled' }]);
@@ -233,7 +233,7 @@ test('formatHuman: summary, delta, receipt, excluded, stale', () => {
   assert.ok(out.includes('receipt: deadbeef'));
 
   const staleOut = formatHuman(
-    { verdict: 'STALE', headSha: 'H', blocking: [], silenced: [], checksPassed: 20 },
+    { verdict: 'STALE', headSha: 'H', blocking: [], silenced: [], checksPassed: 21 },
     { staleReason: 'head moved from a to b' },
   );
   assert.ok(staleOut.includes('STALE — head moved from a to b'));
