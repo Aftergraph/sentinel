@@ -1,0 +1,1 @@
+{"diffFile": "test/fixtures/require-health-check-before-traffic-shift/positive.diff", "expect": ["require-health-check-before-traffic-shift"], "name": "reliability-health-check", "severity": "reliability"}

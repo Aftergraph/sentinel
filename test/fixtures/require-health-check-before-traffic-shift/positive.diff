@@ -1,0 +1,24 @@
+diff --git a/k8s/web-deploy.yaml b/k8s/web-deploy.yaml
+index 1111111..2222222 100644
+--- a/k8s/web-deploy.yaml
++++ b/k8s/web-deploy.yaml
+@@ -1,5 +1,8 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: web
++  template:
++    spec:
++      containers:
++      - image: registry/web:v2
+diff --git a/k8s/worker-sts.yaml b/k8s/worker-sts.yaml
+index 3333333..4444444 100644
+--- a/k8s/worker-sts.yaml
++++ b/k8s/worker-sts.yaml
+@@ -1,4 +1,6 @@
+ apiVersion: apps/v1
+ kind: StatefulSet
+ metadata:
+   name: worker
++      containers:
++      - image: registry/worker:v2

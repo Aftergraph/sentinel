@@ -1,0 +1,38 @@
+diff --git a/k8s/web-deploy.yaml b/k8s/web-deploy.yaml
+index 1111111..2222222 100644
+--- a/k8s/web-deploy.yaml
++++ b/k8s/web-deploy.yaml
+@@ -1,5 +1,10 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: web
++  template:
++    spec:
++      containers:
++      - image: registry/web:v2
++        readinessProbe:
++          httpGet: { path: /healthz, port: 8787 }
+diff --git a/k8s/nightly-job.yaml b/k8s/nightly-job.yaml
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/k8s/nightly-job.yaml
+@@ -0,0 +1,8 @@
++apiVersion: batch/v1
++kind: CronJob
++metadata:
++  name: nightly
++  template:
++    spec:
++      containers:
++      - image: registry/nightly:v2
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 5555555..6666666 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,3 +1,4 @@
+ jobs:
+   build:
++    image: node:20
+     runs-on: ubuntu-latest

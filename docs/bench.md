@@ -7,11 +7,11 @@ hits **iff** every expected rule fires **and** no unexpected rule fires
 expected — the runner is never weakened to make a pack pass.
 
 ```bash
-node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.3.0)
+node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (default pack 1.4.0)
 node --test test/bench.test.mjs
 ```
 
-Current score (v1.3.0): **17 cases, recall 1.0, precision 1.0, 0 misses.**
+Current score (v1.4.0): **18 cases, recall 1.0, precision 1.0, 0 misses.**
 
 Metrics are pure counts (recall, precision, FP-per-case, rules-fired
 distribution). No LLM, no timing, no network. Scores are data: a low

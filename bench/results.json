@@ -1,5 +1,5 @@
 {
-  "pack": "1.3.0",
+  "pack": "1.4.0",
   "results": [
     {
       "case": "clean-eval-negative",
@@ -122,6 +122,19 @@
       "missing": []
     },
     {
+      "case": "reliability-health-check",
+      "fired": [
+        "require-health-check-before-traffic-shift"
+      ],
+      "expected": [
+        "require-health-check-before-traffic-shift"
+      ],
+      "hit": true,
+      "strict": true,
+      "falsePositives": [],
+      "missing": []
+    },
+    {
       "case": "reliability-lockfile",
       "fired": [
         "require-lockfile-update-with-manifest-change"
@@ -217,7 +230,7 @@
     "recall": 1,
     "precision": 1,
     "fpPerCase": 0,
-    "cases": 17,
+    "cases": 18,
     "rulesFired": {
       "require-strict-equality": 1,
       "no-destructive-migration-without-backup-verification": 1,
@@ -226,6 +239,7 @@
       "no-unauthenticated-api-endpoints": 2,
       "no-unbounded-list-query-without-pagination": 2,
       "no-n-plus-one-queries-in-api-resolvers": 1,
+      "require-health-check-before-traffic-shift": 1,
       "require-lockfile-update-with-manifest-change": 1,
       "no-process-exit-in-server-code": 1,
       "require-retry-with-backoff-for-transient-failures": 1,

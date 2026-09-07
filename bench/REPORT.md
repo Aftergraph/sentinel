@@ -1,6 +1,6 @@
-# SentinelBench report — pack `1.3.0`
+# SentinelBench report — pack `1.4.0`
 
-- cases: 17
+- cases: 18
 - recall: 1
 - precision: 1
 - false positives per case: 0
@@ -17,6 +17,7 @@
 | overlap-unauthenticated-route | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |
 | overlap-unbounded-list | yes | yes | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination | no-unauthenticated-api-endpoints, no-unbounded-list-query-without-pagination |
 | performance-n-plus-one | yes | yes | no-n-plus-one-queries-in-api-resolvers | no-n-plus-one-queries-in-api-resolvers |
+| reliability-health-check | yes | yes | require-health-check-before-traffic-shift | require-health-check-before-traffic-shift |
 | reliability-lockfile | yes | yes | require-lockfile-update-with-manifest-change | require-lockfile-update-with-manifest-change |
 | reliability-process-exit | yes | yes | no-process-exit-in-server-code | no-process-exit-in-server-code |
 | reliability-retry-backoff | yes | yes | require-retry-with-backoff-for-transient-failures | require-retry-with-backoff-for-transient-failures |
