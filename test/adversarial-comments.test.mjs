@@ -144,6 +144,37 @@ test('adversarial: live code with trailing comments still fires (no overcorrecti
   }
 });
 
+test('adversarial: whitespace and case variants (wave-25)', () => {
+  // Valid YAML allows space before the colon; SQL keywords are
+  // case-insensitive; JS allows space before a call paren. Bypass and
+  // FP directions both pinned.
+  const spacedImage = diff('k8s/a.yaml', ['+      - image : registry/web:v2'].join('\n'));
+  assert.equal(
+    byId['require-health-check-before-traffic-shift'](spacedImage).length, 1,
+    'space-before-colon image must fire',
+  );
+  const upperImage = diff('k8s/a.yaml', ['+      - IMAGE: registry/web:v2'].join('\n'));
+  assert.equal(
+    byId['require-health-check-before-traffic-shift'](upperImage).length, 0,
+    'uppercase IMAGE is not a k8s key and must stay silent',
+  );
+  const lowerDrop = diff('migrations/1.sql', ['+drop table users;'].join('\n'));
+  assert.equal(
+    byId['no-destructive-sql-without-guard'](lowerDrop).length, 1,
+    'lowercase DROP must fire',
+  );
+  const lowerDelete = diff('migrations/1.sql', ['+delete from t;'].join('\n'));
+  assert.equal(
+    byId['require-where-on-delete-update'](lowerDelete).length, 1,
+    'lowercase DELETE without WHERE must fire',
+  );
+  const spacedCall = diff('src/a.js', ['+process.exit (1);'].join('\n'));
+  assert.equal(
+    byId['no-process-exit-in-server-code'](spacedCall).length, 1,
+    'space before call paren must fire',
+  );
+});
+
 test('adversarial: migration backup hatch still reads comments (documented contract)', () => {
   const d = diff(
     'db/migrations/043_x.sql',
