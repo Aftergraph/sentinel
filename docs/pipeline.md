@@ -5,7 +5,8 @@ transition. Sources of truth: `lib/verify.js`, `lib/runner.js`,
 `lib/evidence.js`, `lib/pipeline.js`, `lib/finding.js` headers (quoted
 below from the implementation); CLI: `sentinel verify run`;
 presentation-only console routes: `POST /api/verify/start`,
-`GET /api/verify/:id`; tenant registry: `lib/org-store.js`.
+`GET /api/verify/:id`, `POST /api/verify/:id/complete` (operator-asserted,
+no server exec); tenant registry: `lib/org-store.js`.
 
 ## Finding lifecycle (`lib/finding.js`)
 
@@ -102,6 +103,37 @@ fixture git repo.)
   `evidenceIds`, and ledger-head staleness (`stale` + `staleReason`).
   With a store configured the view gains an `evidence` array (one entry
   per planned check: `{id, hash, runId, type, targetSha}`).
+
+## Operator completion (`POST /api/verify/:id/complete`)
+
+The console never executes checks server-side (VibeSec). The operator runs
+the planned checks out-of-band and asserts the results; the console only
+records them via `completeRun()` (`console/server.js` `completeVerifyRun`,
+behavioral contract: `test/console-complete.test.mjs`, 8 tests):
+
+- Request: `{ results: [{ type, status, exitCode? }], evidence?: [...] }`.
+  Every planned check needs exactly one result (`status` synonyms accepted:
+  `pass/passed/ok`, `fail/failed/error`, `refute/...`); `evidence` carries
+  operator-sealed EvidenceItems. Mass-assignment guard: only
+  `results`/`evidence` top-level keys and only `type`/`status`/`exitCode`
+  per result entry — any unknown field 400s.
+- Fail closed: missing required check results (`BLOCKED`), duplicate or
+  unknown check types, unknown outcomes, bad evidence seals
+  (`id`/`outputHash`/recomputed-hash mismatch), and evidence `targetSha`
+  mismatches (`INVALID_VERIFICATION`) all answer 400 with nothing mutated
+  (the run stays `PENDING`); unknown runs 404; already-terminal runs 409
+  (no double-complete). Like the other `/api/*` routes (except
+  `/api/healthz`), the route requires the Bearer token on a remote bind
+  (401 without it).
+- Success records the asserted results through `completeRun()` on the
+  finding seeded at start (bound from the ledger finding, `actor: 'human'`,
+  `verify_complete` audit event plus the finding-transition event), persists
+  operator evidence first when a store is
+  configured (500 `evidence store unavailable` on store failure, same as
+  the other evidence routes), and answers the run view plus
+  `finding {from, to, verification_state}`, `findingTransition`, and
+  `assertedBy: 'operator'` — the caller identity the results are labeled
+  with. A later `GET /api/verify/:id` shows the completed run.
 
 ## Console evidence persistence (`--evidence-store`)
 

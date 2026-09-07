@@ -69,6 +69,47 @@ class HttpError extends Error {
   }
 }
 
+// Abuse hardening: fixed-window per-IP rate limiter for /api/*
+// (token-bucket with full refill per window). Keyed by
+// req.socket.remoteAddress ONLY — no headers (X-Forwarded-For etc.) are
+// honored, so bucket state can never leak cross-IP via spoofed headers.
+// Memory is bounded: expired buckets are swept on every check, so only
+// IPs seen in the current window are retained. Counters reset per
+// window. Exported for direct unit testing (per-IP isolation).
+export function createRateLimiter({ windowMs = 60000, max = 300 } = {}) {
+  const w = Number(windowMs);
+  const m = Number(max);
+  const windowMsNorm = Number.isFinite(w) && w > 0 ? w : 60000;
+  const maxNorm = Number.isFinite(m) && m > 0 ? Math.floor(m) : 300;
+  const buckets = new Map(); // ip -> { count, windowStart }
+  function check(ip, now = Date.now()) {
+    const key = typeof ip === 'string' && ip ? ip : 'unknown';
+    for (const [k, b] of buckets) {
+      if (now - b.windowStart >= windowMsNorm) buckets.delete(k);
+    }
+    let b = buckets.get(key);
+    if (!b) {
+      b = { count: 0, windowStart: now };
+      buckets.set(key, b);
+    }
+    b.count += 1;
+    if (b.count > maxNorm) {
+      const retryAfter = Math.max(1, Math.ceil((b.windowStart + windowMsNorm - now) / 1000));
+      return { limited: true, retryAfter };
+    }
+    return { limited: false, retryAfter: 0 };
+  }
+  return { check, get size() { return buckets.size; } };
+}
+
+function isLoopbackIp(ip) {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+// Fixed 429 body — never echoes request content (no path, query, or
+// body bytes are reflected).
+const RATE_LIMITED_BODY = JSON.stringify({ error: 'rate limited' });
+
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, {
@@ -179,7 +220,17 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, rateLimit, noExemptLoopback } = opts;
+  // Rate limiting (abuse hardening, additive): per-IP token-bucket on
+  // /api/* except /api/healthz. Default { windowMs: 60000, max: 300 }.
+  // Loopback (127.0.0.1/::1) is exempt BY DEFAULT; pass
+  // noExemptLoopback: true to disable the exemption (tests).
+  const rlOpts = rateLimit && typeof rateLimit === 'object' ? rateLimit : {};
+  const limiter = createRateLimiter({
+    windowMs: rlOpts.windowMs ?? 60000,
+    max: rlOpts.max ?? 300,
+  });
+  const exemptLoopback = !noExemptLoopback;
   // v1b mode only when governance files are pointed at; otherwise the
   // v1a /api/repos shape is returned byte-identically (no headSource).
   const orgWide = Boolean(topologyPath || orgStatePath);
@@ -1269,10 +1320,33 @@ export function createConsoleServer(opts = {}) {
       const path = url.pathname;
       const method = req.method || 'GET';
 
+      // Rate-limit accounting runs BEFORE expensive work but the 429 is
+      // enforced AFTER the token gate: the bucket counts ALL /api hits
+      // (including failed-auth, so unauthenticated floods still consume
+      // the IP's budget), while the 401 takes precedence over the 429 so
+      // the gate's behavior is unchanged under load.
+      let rateInfo = null;
+      if (path.startsWith('/api/') && path !== '/api/healthz') {
+        const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+        if (!(exemptLoopback && isLoopbackIp(ip))) {
+          rateInfo = limiter.check(ip);
+        }
+      }
+
       if (token && path.startsWith('/api/') && path !== '/api/healthz') {
         if (req.headers.authorization !== `Bearer ${token}`) {
           throw new HttpError(401, 'unauthorized');
         }
+      }
+
+      if (rateInfo && rateInfo.limited) {
+        res.writeHead(429, {
+          'Content-Type': 'application/json',
+          'X-Content-Type-Options': 'nosniff',
+          'Retry-After': String(rateInfo.retryAfter),
+          'Content-Length': Buffer.byteLength(RATE_LIMITED_BODY),
+        });
+        return res.end(RATE_LIMITED_BODY);
       }
 
       if (method === 'GET' && path === '/api/healthz') {

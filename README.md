@@ -58,7 +58,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 345 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
+Full suite: `npm test` — 372 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
 1.1.0 = 20, 1.2.0 = 21 per `lib/rulepack.js`).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
@@ -66,7 +66,10 @@ Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
 isolated verify runs (`verify run`, `docs/pipeline.md`),
 `apps/github` (S1 webhook → verdict card [VERIFY]/manual — needs App install
 + webhook delivery; tests mocked — plus check-runs transport via `gh api`
-[VERIFY]/manual, see `apps/github/README.md`), and the platform vision
+[VERIFY]/manual, see `apps/github/README.md`; webhook HTTP handler
+`createHandler` (`apps/github/app.js`: timing-safe HMAC over the raw body,
+1 MB cap) pre-existed — NO-BUILD, no duplicate entry point, 10 gap tests in
+`test/github-webhook.test.mjs`), and the platform vision
 (`docs/vision-software-verification-platform.md`,
 `docs/roadmap-S0-S10.md`, Cloudflare hosting in `docs/cloudflare.md`).
 
