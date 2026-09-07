@@ -33,6 +33,7 @@ const RULES = [
   'require-health-check-before-traffic-shift',
   'require-foreign-key-constraints-on-related-tables',
   'no-recreate-single-replica-deployment',
+  'no-hardcoded-api-token-in-diff',
 ];
 
 for (const ruleId of RULES) {

@@ -44,9 +44,9 @@ SHIP — 0 findings
 Advisory (non-blocking): 2
   app.js:1 [no-console-log-in-server-diff] console.log("hello");
   app.js:3 [no-console-log-in-server-diff] console.log(x);
-passed-checks: 25
-rule-pack: 1.6.0
-receipt: 3fa3e2e9874111c67491190be86b6104e355d0491b066908a4c5c3d08ee5cde7
+passed-checks: 26
+rule-pack: 1.7.0
+receipt: 2b2352261545ab90f7a24c93f145fa4e827ceca26b3a8357a9546fa75b9f2135
 ```
 
 How to read it:

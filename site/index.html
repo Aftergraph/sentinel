@@ -25,11 +25,11 @@
 <p class="kicker">Verified code review — CLI, first wedge</p>
 <h1 id="hero-title">Ship code you can prove works</h1>
 <p class="lede">Sentinel reviews, tests and verifies every change against the exact commit you intend to merge</p>
-<p class="proof">Rule pack v1.6.0 — 25 deterministic rules. Count verified live from <code>lib/rulepack.js</code>:</p>
+<p class="proof">Rule pack v1.7.0 — 26 deterministic rules. Count verified live from <code>lib/rulepack.js</code>:</p>
 <pre><code>$ node --version
 v24.18.1
 $ node -e "import('./lib/rulepack.js').then(m=&gt;console.log(m.ruleIdsForPack().length))"
-25</code></pre>
+26</code></pre>
 <p class="note">Run from the repo root. Both commands above were executed here; the outputs shown are the outputs observed.</p>
 <p>
 <a class="btn" href="#verify">See how verification works</a>
@@ -61,7 +61,7 @@ $ node -e "import('./lib/rulepack.js').then(m=&gt;console.log(m.ruleIdsForPack()
 <p>Every review appends a content-addressed receipt to the local ledger. Re-running the same HEAD yields the same receipt id — the artifact reads as a certificate, not a chat message.</p>
 </div>
 <div role="tabpanel" id="panel-rules" aria-labelledby="tab-rules" tabindex="0" hidden>
-<p>Rule pack v1.6.0 ships 25 deterministic rules (supported packs: 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0). Style findings are reported but never block a verdict; which severities block is set by policy file, not by the page.</p>
+<p>Rule pack v1.7.0 ships 26 deterministic rules (supported packs: 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0). Style findings are reported but never block a verdict; which severities block is set by policy file, not by the page.</p>
 </div>
 </div>
 </section>
@@ -81,7 +81,7 @@ $ node -e "import('./lib/rulepack.js').then(m=&gt;console.log(m.ruleIdsForPack()
 </section>
 </main>
 <footer>
-<p>Sentinel by Aftergraph — verified code review. Claims on this page are limited to what the repo verifies: <code>README.md</code>, <code>docs/brand-identity.md</code>, <code>lib/rulepack.js</code> (rule pack v1.6.0, 25 rules).</p>
+<p>Sentinel by Aftergraph — verified code review. Claims on this page are limited to what the repo verifies: <code>README.md</code>, <code>docs/brand-identity.md</code>, <code>lib/rulepack.js</code> (rule pack v1.7.0, 26 rules).</p>
 </footer>
 </body>
 </html>

@@ -1,0 +1,13 @@
+diff --git a/config/prod.mjs b/config/prod.mjs
+index 1111111..2222222 100644
+--- a/config/prod.mjs
++++ b/config/prod.mjs
+@@ -1,3 +1,10 @@
++export const AWS_KEY = 'AKIAZZZZZZZZZZZZZZZZ';
++export const GH_TOKEN = 'ghp_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz';
++export const GH_OAUTH = 'gho_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz';
++export const GH_FINE = 'github_pat_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz';
++export const STRIPE = 'sk-live-zzzzzzzzzzzzzzzzzzzzzzzz';
++export const SLACK = 'xoxb-aaaaaaaaaaaaaaaaaaaaaaaaaa';
++export const MAPS = 'AIzazzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz';
+ export const MODE = 'live';

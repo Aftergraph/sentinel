@@ -52,7 +52,7 @@ node bin/sentinel.js verify --receipt /tmp/demo-receipt.json
 Observed (exit 0):
 
 ```
-VALID — 685e102b0a5aa1388b506de0e421d4f30215c7a6f0e2bae6c95daa8188289177 (DO_NOT_SHIP @ local-8, pack 1.6.0)
+VALID — a74cc03db8dd263b0bcf1fc67d918b1aa019b7a37b5a9a18b22f6ffa9ed5f396 (DO_NOT_SHIP @ local-8, pack 1.7.0)
 ```
 
 Independent dynamic check — the fixture's own tests plus a coercion
@@ -73,8 +73,8 @@ What to cite (finding shape is evolving, so cite scalars only):
 
 - verdict: `DO_NOT_SHIP`, rule: `require-strict-equality`
 - location + evidence: `refunds.js:4`, `return refund.amount == 0;`
-- receipt: `685e102b0a5aa1388b506de0e421d4f30215c7a6f0e2bae6c95daa8188289177`
-- receipt check: `VALID — ... (DO_NOT_SHIP @ local-8, pack 1.6.0)`
+- receipt: `a74cc03db8dd263b0bcf1fc67d918b1aa019b7a37b5a9a18b22f6ffa9ed5f396`
+- receipt check: `VALID — ... (DO_NOT_SHIP @ local-8, pack 1.7.0)`
 
 ## Step 5 — verdict transition
 
@@ -97,8 +97,8 @@ SHIP — 0 findings
 ## Determinism notes
 
 - Stable across reruns: verdict, rule id, `file:line`, evidence text,
-  `HEAD: local-8ac6ff7b0861`, `receipt: 685e10...`, `VALID` line,
-  `rule-pack: 1.6.0`, `passed-checks: 25`.
+  `HEAD: local-8ac6ff7b0861`, `receipt: a74cc03...`, `VALID` line,
+  `rule-pack: 1.7.0`, `passed-checks: 26`.
 - Varies (never asserted): `run_id`, `timestamp` inside the JSON/ledger
   receipt; the `VALID` line stays identical.
 - A `Since <sha>: +N new, -M fixed` delta section appears only when your

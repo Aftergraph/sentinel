@@ -11,7 +11,7 @@ node bench/report.js [pack]   # writes bench/results.json + bench/REPORT.md (def
 node --test test/bench.test.mjs
 ```
 
-Current score (v1.6.0): **24 cases, recall 1.0, precision 1.0, 0 misses.**
+Current score (v1.7.0): **26 cases, recall 1.0, precision 1.0, 0 misses** (+ 2 held-out, excluded).
 
 Metrics are pure counts (recall, precision, FP-per-case, rules-fired
 distribution). No LLM, no timing, no network. Scores are data: a low

@@ -1,6 +1,6 @@
 # EXPECTED.md — pinned observed outputs for the offline demo
 
-Captured with Node v24.18.1, rule-pack 1.6.0, fresh ledger (no `Since`
+Captured with Node v24.18.1, rule-pack 1.7.0, fresh ledger (no `Since`
 delta section). Finding JSON is deliberately not quoted (shape is
 evolving); verdict, rule id, and VALID lines are the contract.
 
@@ -15,9 +15,9 @@ PR: 1 file(s), +9/-0 — top: refunds.js (+9/-0)
 HEAD: local-8ac6ff7b0861
 DO NOT SHIP — 1 finding(s)
   refunds.js:4 [require-strict-equality] return refund.amount == 0;
-passed-checks: 25
-rule-pack: 1.6.0
-receipt: 685e102b0a5aa1388b506de0e421d4f30215c7a6f0e2bae6c95daa8188289177
+passed-checks: 26
+rule-pack: 1.7.0
+receipt: a74cc03db8dd263b0bcf1fc67d918b1aa019b7a37b5a9a18b22f6ffa9ed5f396
 ```
 
 ## 2. verify (receipt) — exit 0
@@ -27,12 +27,12 @@ node bin/sentinel.js verify --receipt /tmp/demo-receipt.json
 ```
 
 ```
-VALID — 685e102b0a5aa1388b506de0e421d4f30215c7a6f0e2bae6c95daa8188289177 (DO_NOT_SHIP @ local-8, pack 1.6.0)
+VALID — a74cc03db8dd263b0bcf1fc67d918b1aa019b7a37b5a9a18b22f6ffa9ed5f396 (DO_NOT_SHIP @ local-8, pack 1.7.0)
 ```
 
 Receipt scalars behind the VALID line (from `--format json` + `.receipt`
 extract): `verdict: DO_NOT_SHIP`, `counts.blocking: 1`,
-`receipt_id: 685e102b0a5aa1388b506de0e421d4f30215c7a6f0e2bae6c95daa8188289177`.
+`receipt_id: a74cc03db8dd263b0bcf1fc67d918b1aa019b7a37b5a9a18b22f6ffa9ed5f396`.
 
 ## 3. fixture tests — exit 0
 

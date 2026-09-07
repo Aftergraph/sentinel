@@ -1,0 +1,11 @@
+diff --git a/config/example.mjs b/config/example.mjs
+index 1111111..2222222 100644
+--- a/config/example.mjs
++++ b/config/example.mjs
+@@ -1,3 +1,9 @@
++export const AWS_DOCS = 'AKIAIOSFODNN7EXAMPLE';
++export const STRIPE_TEST = 'sk-test-4eC39HqLyjWDarjtT1zdp7dc';
++export const PLACEHOLDER = 'sk-live-<your-key-here>';
++export const SHORT = 'AKIA123';
++export const WORD = 'stripe-key goes here';
+ export const MODE = 'example';

@@ -1,4 +1,4 @@
-# SentinelBench report — pack `1.6.0`
+# SentinelBench report — pack `1.7.0`
 
 - cases: 26
 - recall: 1
