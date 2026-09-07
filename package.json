@@ -1,0 +1,14 @@
+{
+  "name": "@aftergraph/sentinel",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Read-only PR review CLI with pinned HEAD and deterministic exit codes.",
+  "bin": {
+    "sentinel": "bin/sentinel.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
