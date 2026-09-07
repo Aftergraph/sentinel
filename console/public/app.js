@@ -382,6 +382,102 @@ async function vFinding(q) {
   } catch (e) { out.innerHTML = errBox(e.message, false); }
 }
 
+// Verification-run view: plain polling over GET /api/verify/:runId (no
+// websockets — a 2s setInterval refreshes the run; the timer is cleared on
+// every route change). Brand law — statuses render icon+label+text via the
+// shared .ok/.bad/.warn/.dim hues (never color-only); STALE reuses the
+// .stale-banner banner; the view has no motion of its own so the global
+// prefers-reduced-motion block in styles.css covers it. All controls are
+// native inputs/buttons/links, so the view is keyboard reachable.
+let verifyTimer = null;
+function stopVerifyPoll() {
+  if (verifyTimer !== null) { clearInterval(verifyTimer); verifyTimer = null; }
+}
+
+const VERIFY_STATUS = {
+  PENDING: ['○', 'pending'],
+  RUNNING: ['◌', 'running'],
+  PASS: ['●', 'pass'],
+  FAIL: ['●', 'fail'],
+  REFUTED: ['●', 'refuted'],
+};
+
+function verifyCheckRow(c) {
+  const known = VERIFY_STATUS[c.status];
+  const icon = known ? known[0] : '?';
+  const label = known ? known[1] : String(c.status || 'unknown').toLowerCase();
+  return `<li class="verify-check" data-status="${esc(c.status)}"><span aria-hidden="true">${icon}</span> ` +
+    `<strong>${esc(c.type)}</strong> <span>${esc(label)}</span> ` +
+    `<span class="dim">${esc(c.type)} check ${esc(label)}</span></li>`;
+}
+
+function verifyHtml(run) {
+  const total = run.progress ? run.progress.total : (run.checks || []).length;
+  const done = run.progress ? run.progress.done : 0;
+  const stale = run.stale
+    ? `<p class="stale-banner" role="status">◐ STALE — run targets <code>${esc(short(run.targetSha))}</code> but ledger head is <code>${esc(short(run.ledgerHead))}</code></p>`
+    : '';
+  const fr = run.findingRef || {};
+  const ev = (run.evidenceIds && run.evidenceIds.length > 0)
+    ? `<ul class="verify-evidence">` + run.evidenceIds.map((id) =>
+      `<li><a href="#/finding?repo=${encodeURIComponent(fr.repo || '')}&pr=${encodeURIComponent(String(fr.prNumber ?? ''))}&rule=${encodeURIComponent(fr.ruleId || '')}&line=${encodeURIComponent(String(fr.line ?? ''))}"><code>${esc(id)}</code></a> <span class="dim">sealed evidence</span></li>`).join('') + `</ul>`
+    : '<p class="dim">No sealed evidence attached yet.</p>';
+  return `<p><span class="pill info">● ${esc(run.status)}</span> <strong>${esc(run.id)}</strong> ` +
+    `<span class="dim">finding <code>${esc(fr.ruleId || '')} ${esc(fr.file || '')}${fr.line != null ? ':' + esc(String(fr.line)) : ''}</code> · target <code>${esc(short(run.targetSha))}</code></span></p>` +
+    stale +
+    `<h3>Progress</h3><progress class="verify-progress" max="${total}" value="${done}" aria-label="Verification progress for ${esc(run.id)}">${esc(`${done}/${total}`)}</progress>` +
+    `<p class="verify-count" role="status">${done}/${total} checks complete</p>` +
+    `<h3>Checks (${(run.checks || []).length})</h3><ul class="verify-checks">` +
+    (run.checks || []).map(verifyCheckRow).join('') + `</ul>` +
+    `<h3>Sealed evidence (${(run.evidenceIds || []).length})</h3>${ev}`;
+}
+
+async function loadVerifyRun(id, out) {
+  try {
+    out.innerHTML = verifyHtml(await api('GET', `/api/verify/${encodeURIComponent(id)}`));
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
+async function vVerify(q) {
+  const repo = q.get('repo') || '';
+  const pr = q.get('pr') || '';
+  const rule = q.get('rule') || '';
+  const line = q.get('line') || '';
+  const run = q.get('run') || '';
+  el.innerHTML = `<h2>Verification run</h2>
+    <div class="row"><div><label for="vr">Repository</label><input id="vr" placeholder="owner/name" value="${esc(repo)}" autocomplete="off"></div><div><label for="vp">PR</label><input id="vp" placeholder="pr" value="${esc(pr)}" inputmode="numeric"></div><div><label for="vrule">Rule</label><input id="vrule" placeholder="rule id" value="${esc(rule)}" autocomplete="off"></div><div><label for="vline">Line</label><input id="vline" placeholder="line" value="${esc(line)}" inputmode="numeric"></div><button id="vstart" class="primary">Start run</button></div>
+    <div class="row"><div><label for="vrun">Run id (poll an existing run)</label><input id="vrun" placeholder="VR-0001" value="${esc(run)}" autocomplete="off"></div><button id="vload">Load</button></div><div id="vout"></div>`;
+  focusContent();
+  const go = (id) => {
+    const target = `#/verify?run=${encodeURIComponent(id)}`;
+    if (location.hash === target) route();
+    else location.hash = target;
+  };
+  document.getElementById('vstart').onclick = async (e) => {
+    const btn = e.target;
+    const out = document.getElementById('vout');
+    btn.disabled = true;
+    try {
+      const started = await api('POST', '/api/verify/start', {
+        repo: document.getElementById('vr').value,
+        prNumber: Number(document.getElementById('vp').value),
+        ruleId: document.getElementById('vrule').value,
+        line: Number(document.getElementById('vline').value),
+      });
+      toast(`Run ${started.id} started`);
+      go(started.id);
+    } catch (err) { out.innerHTML = errBox(err.message, false); }
+    btn.disabled = false;
+  };
+  document.getElementById('vload').onclick = () => go(document.getElementById('vrun').value.trim());
+  if (!run) return;
+  const out = document.getElementById('vout');
+  out.innerHTML = skeleton(3);
+  await loadVerifyRun(run, out);
+  stopVerifyPoll();
+  verifyTimer = setInterval(() => loadVerifyRun(run, out), 2000);
+}
+
 el.addEventListener('click', async (e) => {
   const retry = e.target.closest('button[data-retry]');
   if (retry) { route(); return; }
@@ -396,6 +492,7 @@ el.addEventListener('click', async (e) => {
 });
 
 async function route() {
+  stopVerifyPoll();
   const m = (location.hash || '#/board').match(/^#(\/[^?]*)(\?.*)?$/);
   const path = m ? m[1] : '/board';
   const q = new URLSearchParams(m && m[2] ? m[2] : '');
@@ -407,6 +504,7 @@ async function route() {
   if (path === '/ledger') return vLedger(q);
   if (path === '/pr') return vPR(q);
   if (path === '/finding') return vFinding(q);
+  if (path === '/verify') return vVerify(q);
   return vBoard();
 }
 window.addEventListener('hashchange', route);

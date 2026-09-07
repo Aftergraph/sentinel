@@ -135,6 +135,21 @@ ul.findings-list { list-style: none; margin: 8px 0; padding: 0; }
 .toast { background: var(--panel); border: 1px solid var(--cyan);
   border-radius: var(--radius); padding: 10px 14px; max-width: min(90vw, 360px); }
 .toast.err { border-color: var(--red); }
+/* Verification-run view: brand law — check states render icon+label+text
+   (see app.js verifyCheckRow), never color-only; PASS=green, FAIL=red,
+   RUNNING=muted-orange, PENDING=gray, REFUTED=purple. STALE reuses the
+   shared .stale-banner. No motion in this view, so the global
+   prefers-reduced-motion block above covers it. */
+.verify-progress { width: 100%; accent-color: var(--green); }
+.verify-count { color: var(--dim); }
+ul.verify-checks, ul.verify-evidence { list-style: none; margin: 8px 0; padding: 0; }
+.verify-check, .verify-evidence li { background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
+.verify-check[data-status="PASS"] { border-left: 3px solid var(--green); }
+.verify-check[data-status="FAIL"] { border-left: 3px solid var(--red); }
+.verify-check[data-status="RUNNING"] { border-left: 3px solid var(--orange); }
+.verify-check[data-status="PENDING"] { border-left: 3px solid var(--gray); }
+.verify-check[data-status="REFUTED"] { border-left: 3px solid var(--purple); }
 @media (max-width: 640px) {
   main { padding: 12px; }
   .topbar { flex-wrap: wrap; }

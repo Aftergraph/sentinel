@@ -9,6 +9,20 @@ import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
 import { postCheck } from './checks.js';
+import { createGhClient } from './gh-client.js';
+
+// Production `gh api` transport for check runs (additive, opt-in).
+// Returns the injected checksApi when present; otherwise builds a per-event
+// client bound to this event's repo when opts.ghChecks is set (main() maps
+// SENTINEL_GITHUB_CHECKS=1 to it). Returns null when disabled, preserving
+// the exact prior return shape. opts.ghExec / opts.ghToken customize the
+// client (exec injection keeps tests offline); the token travels via
+// GH_TOKEN env, never argv, and is never logged.
+export function checksApiFromOpts(opts = {}, repo) {
+  if (opts.checksApi || opts.checkApi) return opts.checksApi || opts.checkApi;
+  if (!opts.ghChecks) return null;
+  return createGhClient({ repo, exec: opts.ghExec, token: opts.ghToken });
+}
 
 export { selectRepo, ingestPR, captureHead, postCheck };
 import {
@@ -122,7 +136,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
   // Additive check-runs transport: only when a client is injected (existing
   // callers without one see the exact prior return shape). Fail-closed like
   // the rest of the slice — a checks error propagates to the 500 path.
-  const checksApi = opts.checksApi || opts.checkApi;
+  const checksApi = checksApiFromOpts(opts, repo);
   if (!checksApi) {
     return { handled: true, action, verdict, receipt: receipt.receipt_id };
   }
@@ -223,6 +237,8 @@ async function main() {
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
+      ghChecks: process.env.SENTINEL_GITHUB_CHECKS === '1',
+      ghToken: process.env.SENTINEL_GH_TOKEN || undefined,
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);

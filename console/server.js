@@ -28,6 +28,7 @@ import {
   detectSource,
 } from '../lib/receipt.js';
 import { load as loadMemory } from '../lib/memory.js';
+import { planChecks } from '../lib/verify.js';
 import {
   RULE_PACK_VERSION,
   SUPPORTED_PACKS,
@@ -619,6 +620,79 @@ export function createConsoleServer(opts = {}) {
     return { repo, prNumber, headSha: latest.headSha, verdict: latest.verdict, stale, finding: match, evidence, history };
   }
 
+  // Verification runs (display only — an in-memory registry keyed by run
+  // id, never persisted: entries live in this server process and are lost
+  // on restart. Documented limit: at most MAX_VERIFY_RUNS runs are kept;
+  // starting past the cap evicts the oldest id first. Check planning is
+  // delegated to lib/verify.js planChecks; the console only presents.)
+  const verifyRuns = new Map();
+  let verifySeq = 0;
+  const MAX_VERIFY_RUNS = 500;
+
+  function startVerifyRun(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new HttpError(400, 'invalid JSON body');
+    }
+    const repo = typeof body.repo === 'string' && body.repo.trim() ? body.repo.trim() : null;
+    const prRaw = body.prNumber ?? body.pr;
+    const prNumber = typeof prRaw === 'number' && Number.isInteger(prRaw)
+      ? prRaw
+      : (typeof prRaw === 'string' && /^-?\d+$/.test(prRaw.trim()) ? Number(prRaw.trim()) : null);
+    const ruleId = typeof body.ruleId === 'string' && body.ruleId ? body.ruleId : null;
+    const line = typeof body.line === 'number' && Number.isInteger(body.line)
+      ? body.line
+      : (typeof body.line === 'string' && /^-?\d+$/.test(body.line.trim()) ? Number(body.line.trim()) : null);
+    if (!repo || prNumber === null || !ruleId || line === null) {
+      throw new HttpError(400, 'repo, prNumber, ruleId and integer line are required');
+    }
+    const chain = noLedger ? [] : loadLedger(ledgerPath);
+    const entries = chain.filter((e) => e && e.repo === repo && String(e.prNumber) === String(prNumber));
+    if (entries.length === 0) throw new HttpError(404, 'no record for this repo+pr');
+    const latest = entries[entries.length - 1];
+    const snap = (latest.findings && typeof latest.findings === 'object') ? latest.findings : {};
+    const match = [...(snap.blocking || []), ...(snap.nonBlocking || []), ...(snap.silenced || [])]
+      .find((f) => f && f.ruleId === ruleId && Number(f.line) === line);
+    if (!match) throw new HttpError(404, 'no such finding on the latest receipt');
+    const types = planChecks({ ruleId: match.ruleId });
+    verifySeq += 1;
+    const id = `VR-${String(verifySeq).padStart(4, '0')}`;
+    const run = {
+      id,
+      findingRef: { repo, prNumber, ruleId, line },
+      targetSha: latest.headSha,
+      // Mirrors lib/verify.js PENDING; runs never advance server-side (the
+      // console presents planned checks, it does not execute them).
+      status: 'PENDING',
+      checks: types.map((type) => ({ type, status: 'PENDING' })),
+      evidenceIds: Array.isArray(match.evidenceRefs) ? [...match.evidenceRefs] : [],
+    };
+    verifyRuns.set(id, run);
+    while (verifyRuns.size > MAX_VERIFY_RUNS) {
+      verifyRuns.delete(verifyRuns.keys().next().value);
+    }
+    return verifyRunView(run);
+  }
+
+  function verifyRunView(run) {
+    const chain = noLedger ? [] : loadLedger(ledgerPath);
+    const entries = chain.filter((e) => e && e.repo === run.findingRef.repo && String(e.prNumber) === String(run.findingRef.prNumber));
+    const ledgerHead = entries.length > 0 ? entries[entries.length - 1].headSha : null;
+    const stale = ledgerHead !== null && ledgerHead !== run.targetSha;
+    const done = run.checks.filter((c) => c.status !== 'PENDING' && c.status !== 'RUNNING').length;
+    return {
+      id: run.id,
+      findingRef: { ...run.findingRef },
+      targetSha: run.targetSha,
+      status: run.status,
+      progress: { done, total: run.checks.length },
+      checks: run.checks.map((c) => ({ type: c.type, status: c.status })),
+      evidenceIds: [...run.evidenceIds],
+      stale,
+      staleReason: stale ? `run targets ${run.targetSha} but ledger head is ${ledgerHead}` : null,
+      ledgerHead,
+    };
+  }
+
   function listRules() {
     const pack = activePack();
     return {
@@ -735,6 +809,9 @@ export function createConsoleServer(opts = {}) {
       if (method === 'POST' && path === '/api/verify') {
         return send(200, runVerify(await readJson(req)));
       }
+      if (method === 'POST' && path === '/api/verify/start') {
+        return send(200, startVerifyRun(await readJson(req)));
+      }
       if (method === 'GET' && path === '/api/overview') {
         return send(200, buildOverview());
       }
@@ -747,6 +824,18 @@ export function createConsoleServer(opts = {}) {
         const parsed = parseFindingPath(path);
         if (!parsed) throw new HttpError(400, 'missing repo, pr, rule or line');
         return send(200, buildFindingRecord(parsed.repo, parsed.prNumber, parsed.ruleId, parsed.line, url.searchParams.get('head')));
+      }
+      if (method === 'GET' && path.startsWith('/api/verify/')) {
+        let id;
+        try {
+          id = decodeURIComponent(path.slice('/api/verify/'.length));
+        } catch {
+          throw new HttpError(400, 'malformed verify path');
+        }
+        if (!id || id.includes('/')) return send(404, { error: 'not found' });
+        const run = verifyRuns.get(id);
+        if (!run) throw new HttpError(404, 'no such verification run');
+        return send(200, verifyRunView(run));
       }
       if (method === 'GET' && path === '/api/rules') {
         return send(200, listRules());
