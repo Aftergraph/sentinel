@@ -33,9 +33,14 @@ npm install -g @aftergraph/sentinel   # Node >= 20, no build step
 sentinel review --pr 42               # human verdict, exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
+sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
 sentinel review --pr 42 --rule-pack 1.0.0  # pinned original 6-rule pack
+sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 sentinel --help
 ```
+
+Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
+(`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
 CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never treat 2 as failure):
 

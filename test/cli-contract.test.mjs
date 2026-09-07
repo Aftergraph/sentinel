@@ -38,7 +38,7 @@ test('loadRules: pack versions resolve to matching rule counts', async () => {
 });
 
 test('formats: human, json, sarif are the full contract', () => {
-  assert.deepEqual([...VALID_FORMATS].sort(), ['human', 'json', 'sarif']);
+  assert.deepEqual([...VALID_FORMATS].sort(), ['gov', 'human', 'json', 'sarif']);
 });
 
 test('verdict: style findings never block, blocking still flips verdict', () => {
