@@ -10,7 +10,7 @@
   "name": "@aftergraph/sentinel",
   "private": true,
   "scripts": {
-    "test": "node --test test/rules.test.mjs"
+    "test": "node --test test/rules.test.mjs test/memory-sarif.test.mjs"
   },
   "type": "module",
   "version": "0.0.1"
