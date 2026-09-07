@@ -467,6 +467,97 @@ export function createConsoleServer(opts = {}) {
     return { confidence, open: repos.length, blocked, stale, critical, needsAttention, recentVerdicts };
   }
 
+  // PR-detail record (display only — aggregated from the ledger receipts
+  // written by finishReview; severity/blocking flags are recomputed from
+  // lib/rulepack at serve time, never trusted from stored flags).
+  // stale is pure head-drift: true only when the caller supplies
+  // ?head= and it differs from the ledger HEAD. A stored STALE verdict
+  // stays visible via `verdict`, not via this flag.
+  function parsePrPath(path) {
+    const prefix = '/api/pr/';
+    if (!path.startsWith(prefix)) return null;
+    let parts;
+    try {
+      parts = path.slice(prefix.length).split('/').filter((s) => s.length > 0)
+        .map((s) => decodeURIComponent(s));
+    } catch {
+      throw new HttpError(400, 'malformed pr path');
+    }
+    if (parts.length < 2) throw new HttpError(400, 'missing repo or pr');
+    const prRaw = parts[parts.length - 1];
+    const repo = parts.slice(0, -1).join('/');
+    if (!repo || !prRaw) throw new HttpError(400, 'missing repo or pr');
+    const prNumber = /^-?\d+$/.test(prRaw) ? Number(prRaw) : prRaw;
+    return { repo, prNumber };
+  }
+
+  function enrichFinding(f) {
+    const severity = (f && SEVERITY_MAP[f.ruleId]) || 'unknown';
+    return {
+      ruleId: f.ruleId,
+      file: f.file,
+      line: f.line ?? null,
+      evidence: f.evidence ?? '',
+      severity,
+      blocking: BLOCKING_SEVERITIES.has(severity),
+      // AI-confidence is a model estimate and never evidence: it is
+      // reported on its own key, never merged into verificationState.
+      aiConfidence: (f && typeof f.aiConfidence === 'number') ? f.aiConfidence : null,
+      verificationState: (f && (f.verification_state || f.verificationState)) || 'unknown',
+      evidenceRefs: Array.isArray(f && f.evidenceRefs) ? f.evidenceRefs : [],
+    };
+  }
+
+  function buildPrRecord(repo, prNumber, requestedHead) {
+    const chain = noLedger ? [] : loadLedger(ledgerPath);
+    const entries = chain.filter((e) => e && e.repo === repo && String(e.prNumber) === String(prNumber));
+    if (entries.length === 0) throw new HttpError(404, 'no record for this repo+pr');
+    const latest = entries[entries.length - 1];
+    const snap = (latest.findings && typeof latest.findings === 'object') ? latest.findings : {};
+    const blocking = (snap.blocking || []).map(enrichFinding);
+    const nonBlocking = (snap.nonBlocking || []).map(enrichFinding);
+    const silenced = (snap.silenced || []).map(enrichFinding);
+    const head = (requestedHead !== undefined && requestedHead !== null && requestedHead !== '')
+      ? String(requestedHead) : null;
+    const stale = head !== null && head !== latest.headSha;
+    // Sealed evidence attached to the latest findings (evidence id IS its
+    // sha256 per lib/evidence.js, so id and hash coincide by construction).
+    const evidence = [];
+    for (const f of [...blocking, ...nonBlocking, ...silenced]) {
+      for (const id of f.evidenceRefs) {
+        evidence.push({ id, hash: id, ruleId: f.ruleId, file: f.file, line: f.line });
+      }
+    }
+    const activity = entries.map((e, i) => ({
+      seq: i + 1,
+      type: 'receipt',
+      receiptId: e.receipt_id,
+      prevReceiptId: e.prev_receipt_id || null,
+      verdict: e.verdict,
+      headSha: e.headSha,
+      timestamp: e.timestamp,
+      counts: e.counts || null,
+    }));
+    return {
+      repo,
+      prNumber,
+      headSha: latest.headSha,
+      requestedHead: head,
+      stale,
+      staleReason: stale ? `requested head ${head} differs from ledger head ${latest.headSha}` : null,
+      verdict: latest.verdict,
+      rulePackVersion: latest.rulePackVersion,
+      blocking,
+      nonBlocking,
+      silenced,
+      counts: latest.counts || null,
+      receiptId: latest.receipt_id,
+      receipt: latest,
+      evidence,
+      activity,
+    };
+  }
+
   function listRules() {
     const pack = activePack();
     return {
@@ -585,6 +676,11 @@ export function createConsoleServer(opts = {}) {
       }
       if (method === 'GET' && path === '/api/overview') {
         return send(200, buildOverview());
+      }
+      if (method === 'GET' && (path === '/api/pr' || path.startsWith('/api/pr/'))) {
+        const parsed = parsePrPath(path);
+        if (!parsed) throw new HttpError(400, 'missing repo or pr');
+        return send(200, buildPrRecord(parsed.repo, parsed.prNumber, url.searchParams.get('head')));
       }
       if (method === 'GET' && path === '/api/rules') {
         return send(200, listRules());

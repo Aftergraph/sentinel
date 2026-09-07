@@ -204,6 +204,107 @@ async function vLedger(q) {
   } catch (e) { out.innerHTML = errBox(e.message, false); }
 }
 
+const PR_TABS = ['Overview', 'Findings', 'Evidence', 'Activity'];
+
+const SEV_ICON = { security: '⬢', reliability: '⬣', correctness: '◆', data: '⬔', performance: '▲', style: '○', unknown: '?' };
+
+function findingItem(f) {
+  const blocking = f.blocking
+    ? '<span class="pill dns">● blocked</span>'
+    : '<span class="pill gray">○ advisory</span>';
+  const verified = f.verificationState === 'CONFIRMED'
+    ? '<span class="pill verified">● CONFIRMED</span>'
+    : `<span class="pill gray">? ${esc(f.verificationState || 'unknown')}</span>`;
+  const conf = typeof f.aiConfidence === 'number'
+    ? `◆ AI confidence ${esc(String(f.aiConfidence))} <span class="dim">(model estimate, not evidence)</span>`
+    : '◆ AI confidence n/a <span class="dim">(model estimate, not evidence)</span>';
+  return `<li class="finding"><span class="sev" aria-label="severity ${esc(f.severity || 'unknown')}">${esc(SEV_ICON[f.severity] || '?')} ${esc(f.severity || 'unknown')}</span> ` +
+    `<strong>${esc(f.ruleId)}</strong> <code>${esc(f.file)}:${esc(String(f.line ?? ''))}</code> ${blocking}` +
+    (f.evidence ? `<p>${esc(f.evidence)}</p>` : '') +
+    `<p class="pr-ai">${conf}</p><p>Verification: ${verified}</p></li>`;
+}
+
+function prPanels(p) {
+  const staleBanner = (p.stale || p.verdict === 'STALE')
+    ? `<p class="stale-banner" role="status">◐ STALE — ${esc(p.staleReason || `verdict STALE at ${short(p.headSha)}`)}</p>` : '';
+  const overview = `${staleBanner}<p>${pill(p.verdict)} <span class="dim">pack <code>${esc(p.rulePackVersion || '')}</code></span></p>` +
+    `<p>HEAD <code>${esc(p.headSha)}</code>` +
+    (p.requestedHead ? ` · requested <code>${esc(p.requestedHead)}</code>` : '') + `</p>` +
+    (p.counts ? `<p class="dim">blocking ${p.counts.blocking ?? '?'} · silenced ${p.counts.silenced ?? '?'} · advisory ${p.counts.nonBlocking ?? '?'} · excluded ${p.counts.excluded ?? '?'}</p>` : '') +
+    (p.receipt ? `<h3>Receipt</h3><pre>${esc(p.receiptId)}\nhead ${esc(short(p.headSha))} · <button data-verify='${esc(JSON.stringify(p.receipt))}'>Verify</button> <span></span></pre>` : '');
+  const groups = [['Blocking', p.blocking], ['Advisory', p.nonBlocking], ['Silenced', p.silenced]]
+    .filter(([, rows]) => rows && rows.length > 0)
+    .map(([t, rows]) => `<h3>${esc(t)} (${rows.length})</h3><ul class="findings-list">` + rows.map(findingItem).join('') + '</ul>').join('');
+  const findings = groups || '<p class="dim">No findings recorded for this HEAD.</p>';
+  const evidence = (p.evidence && p.evidence.length > 0)
+    ? `<ul class="findings-list">` + p.evidence.map((e) =>
+      `<li><code>${esc(e.id)}</code><p class="dim">sha256 <code>${esc(e.hash)}</code> · ${esc(e.ruleId || '')} ${esc(e.file || '')}${e.line != null ? ':' + esc(String(e.line)) : ''}</p></li>`).join('') + '</ul>'
+    : '<p class="dim">No sealed evidence attached yet.</p>';
+  const activity = (p.activity && p.activity.length > 0)
+    ? `<ol class="queue">` + p.activity.map((a) =>
+      `<li>${pill(a.verdict)} <code>${esc(short(a.headSha))}</code> <span class="dim">#${a.seq} · ${esc(a.timestamp || '')}</span><br><code>${esc((a.receiptId || '').slice(0, 12))}</code></li>`).join('') + '</ol>'
+    : '<p class="dim">No receipt trail for this PR yet.</p>';
+  return { Overview: overview, Findings: findings, Evidence: evidence, Activity: activity };
+}
+
+function renderPrTabs(host, p) {
+  const panels = prPanels(p);
+  const tabs = PR_TABS.map((t, i) =>
+    `<button role="tab" id="pr-tab-${t}" aria-controls="pr-panel-${t}" aria-selected="${i === 0 ? 'true' : 'false'}" tabindex="${i === 0 ? '0' : '-1'}">${t}</button>`).join('');
+  const bodies = PR_TABS.map((t, i) =>
+    `<div role="tabpanel" id="pr-panel-${t}" aria-labelledby="pr-tab-${t}" tabindex="0"${i === 0 ? '' : ' hidden'}>${panels[t]}</div>`).join('');
+  host.innerHTML = `<section aria-label="PR detail ${esc(p.repo)} number ${esc(String(p.prNumber))}">` +
+    `<p>${pill(p.verdict)} <strong>${esc(p.repo)}#${esc(String(p.prNumber))}</strong> <span class="dim"><code>${esc(short(p.headSha))}</code></span></p>` +
+    `<div class="tabs" role="tablist" aria-label="PR detail sections">${tabs}</div>${bodies}</section>`;
+  const tablist = host.querySelector('[role="tablist"]');
+  const tabEls = Array.from(tablist.querySelectorAll('[role="tab"]'));
+  const select = (idx) => {
+    tabEls.forEach((tab, i) => {
+      const on = i === idx;
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.tabIndex = on ? 0 : -1;
+      const panel = host.querySelector('#' + tab.getAttribute('aria-controls'));
+      if (on) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    });
+    tabEls[idx].focus();
+  };
+  tablist.addEventListener('keydown', (e) => {
+    const cur = tabEls.indexOf(document.activeElement);
+    if (cur === -1) return;
+    let next = null;
+    if (e.key === 'ArrowRight') next = (cur + 1) % tabEls.length;
+    else if (e.key === 'ArrowLeft') next = (cur - 1 + tabEls.length) % tabEls.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabEls.length - 1;
+    if (next !== null) { e.preventDefault(); select(next); }
+  });
+  tabEls.forEach((tab, i) => tab.addEventListener('click', () => select(i)));
+}
+
+async function vPR(q) {
+  const repo = q.get('repo') || '';
+  const pr = q.get('pr') || '';
+  const head = q.get('head') || '';
+  el.innerHTML = `<h2>PR detail</h2>
+    <div class="row"><div><label for="prr">Repository</label><input id="prr" placeholder="owner/name" value="${esc(repo)}" autocomplete="off"></div><div><label for="prp">PR</label><input id="prp" placeholder="pr" value="${esc(pr)}" inputmode="numeric"></div><div><label for="prh">Requested HEAD (optional, for STALE check)</label><input id="prh" placeholder="head sha" value="${esc(head)}" autocomplete="off"></div><button id="go">Load</button></div><div id="out"></div>`;
+  focusContent();
+  document.getElementById('go').onclick = () => {
+    const parts = [`repo=${encodeURIComponent(document.getElementById('prr').value)}`, `pr=${encodeURIComponent(document.getElementById('prp').value)}`];
+    const h = document.getElementById('prh').value.trim();
+    if (h) parts.push(`head=${encodeURIComponent(h)}`);
+    location.hash = `#/pr?${parts.join('&')}`;
+  };
+  if (!repo || !pr) return;
+  const out = document.getElementById('out');
+  out.innerHTML = skeleton(4);
+  try {
+    const p = await api('GET', `/api/pr/${encodeURIComponent(repo)}/${encodeURIComponent(pr)}${head ? `?head=${encodeURIComponent(head)}` : ''}`);
+    renderPrTabs(out, p);
+    toast('PR loaded');
+  } catch (e) { out.innerHTML = errBox(e.message, false); }
+}
+
 el.addEventListener('click', async (e) => {
   const retry = e.target.closest('button[data-retry]');
   if (retry) { route(); return; }
@@ -227,6 +328,7 @@ async function route() {
   if (path === '/rules') return vRules();
   if (path === '/config') return vConfig();
   if (path === '/ledger') return vLedger(q);
+  if (path === '/pr') return vPR(q);
   return vBoard();
 }
 window.addEventListener('hashchange', route);

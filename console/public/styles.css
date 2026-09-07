@@ -103,6 +103,23 @@ code { color: var(--cyan); }
 ol.queue, ul.queue { list-style: none; margin: 8px 0; padding: 0; }
 .queue li { background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
+/* PR detail: brand law — purple=AI/inference, green=verified, red=blocked,
+   muted-orange=STALE, gray=unknown. Statuses render via icon+label+text
+   pills (never color-only). Tabs are semantic buttons: Tab moves focus in,
+   arrows/Home/End switch (see app.js); switching is instant, no motion, so
+   the global prefers-reduced-motion block below covers the rest. */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin: 12px 0 4px; }
+.tabs [role="tab"] { background: none; border: 1px solid transparent; border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0; min-height: 44px; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--cyan); background: var(--panel); border-color: var(--line); }
+.pr-ai { color: var(--purple); }
+.pill.verified { background: #052e22; color: var(--green); }
+.stale-banner { color: var(--orange); border: 1px solid var(--orange);
+  border-radius: var(--radius); padding: 10px 12px; }
+ul.findings-list { list-style: none; margin: 8px 0; padding: 0; }
+.findings-list > li { background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
+.sev { font-weight: 600; }
 /* Toasts: polite, auto-dismiss, never steal focus. */
 #toasts { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right)); display: flex;
   flex-direction: column; gap: 8px; z-index: 50; }

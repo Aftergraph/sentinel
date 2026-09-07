@@ -7,7 +7,9 @@ import { readFileSync } from 'node:fs';
 import { verifySignature } from './verify.js';
 import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
-import { handleInstallation } from './store.js';
+import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
+
+export { selectRepo, ingestPR, captureHead };
 import {
   analyzeDiff, checkFreshness, computeDelta, loadConfig, environmentInfo,
 } from '../../lib/review.js';

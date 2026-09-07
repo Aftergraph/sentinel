@@ -17,6 +17,10 @@ export function defaultStorePath() {
   return join(homedir(), '.sentinel', 'github-installations.json');
 }
 
+export function defaultPrStorePath() {
+  return join(homedir(), '.sentinel', 'github-prs.json');
+}
+
 // Load the store object (key -> record). Missing file yields an empty
 // store; a corrupt or non-object file yields an empty store rather than
 // failing the webhook path (payload validation still fails closed).
@@ -140,4 +144,165 @@ export function handleInstallation(payload, { storePath = defaultStorePath() } =
     reason: `installation:${action}:${key}:${accountLogin}:${record.repos.length}repos`,
   });
   return record;
+}
+
+// ---- Slice 2: repo-select → PR-ingest → SHA-capture ----
+//
+// PR records live in a separate file-backed JSON registry (keyed by
+// `${repo}#${prNumber}`):
+//   { repo, prNumber, headSha, baseSha, ingestedAt }
+// A repo is "known" when some installation record claims it (via install
+// payload repositories or selectRepo). ingestPR for an unknown repo is an
+// ignored event ({ ignored: true }, no throw, no audit). Every mutation
+// appends one audit event via ../../lib/audit.js.
+
+const HEX40 = /^[0-9a-f]{40}$/i;
+
+export function isHeadSha(value) {
+  return typeof value === 'string' && HEX40.test(value);
+}
+
+function requireSha(name, value) {
+  if (!isHeadSha(value)) {
+    throw new Error(`ingestPR requires 40-hex ${name}`);
+  }
+  return value;
+}
+
+// Accept a bare path string (a store file) or an opts object. PR state
+// derives from prStorePath when given, otherwise sits next to storePath
+// so one tmp dir isolates both registries.
+function resolveInstallPath(opts) {
+  if (typeof opts === 'string') return opts;
+  if (opts && typeof opts === 'object' && typeof opts.storePath === 'string') {
+    return opts.storePath;
+  }
+  return defaultStorePath();
+}
+
+function resolvePrPath(opts) {
+  if (typeof opts === 'string') return opts;
+  if (opts && typeof opts === 'object') {
+    const p = opts.prStorePath ?? opts.prPath ?? opts.ingestStorePath ?? opts.ingestPath;
+    if (typeof p === 'string') return p;
+    if (typeof opts.storePath === 'string') {
+      return join(dirname(opts.storePath), 'github-prs.json');
+    }
+  }
+  return defaultPrStorePath();
+}
+
+export function loadPrStore(path = defaultPrStorePath()) {
+  if (!existsSync(path)) return {};
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return raw;
+  } catch {
+    return {};
+  }
+}
+
+export function savePrStore(store, path = defaultPrStorePath()) {
+  if (!store || typeof store !== 'object' || Array.isArray(store)) {
+    throw new Error('savePrStore requires a store object');
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  return store;
+}
+
+function prKey(repo, prNumber) {
+  return `${repo}#${String(prNumber)}`;
+}
+
+function isRepoKnown(repo, installPath) {
+  const store = loadStore(installPath);
+  return Object.values(store).some(
+    (r) => r && typeof r === 'object' && Array.isArray(r.repos) && r.repos.includes(repo),
+  );
+}
+
+// Link a repo to an existing installation (tenant scope). Unknown
+// installationId throws (fail closed). Idempotent: relinking appends no
+// duplicate. Emits one `integration.changed` audit event per call.
+export function selectRepo(installationId, repoFullName, opts) {
+  if (installationId === undefined || installationId === null || installationId === '') {
+    throw new Error('selectRepo requires installationId');
+  }
+  if (typeof repoFullName !== 'string' || repoFullName.trim() === '') {
+    throw new Error('selectRepo requires repoFullName');
+  }
+  const storePath = resolveInstallPath(opts);
+  const store = loadStore(storePath);
+  const key = String(installationId);
+  const record = store[key] || null;
+  if (!record) {
+    throw new Error(`selectRepo unknown installation (${key})`);
+  }
+  if (!Array.isArray(record.repos)) record.repos = [];
+  if (!record.repos.includes(repoFullName)) record.repos.push(repoFullName);
+  store[key] = record;
+  saveStore(store, storePath);
+  append('integration.changed', {
+    actor: 'github-app',
+    reason: `repo:selected:${key}:${repoFullName}`,
+  });
+  return record;
+}
+
+// Ingest a PR snapshot. Malformed SHAs throw (fail closed, before any
+// repo check). Unknown repos return { ignored: true }. Same-headSha
+// redelivery returns the stored record unchanged (no duplicates, no new
+// event). A new headSha updates the record and emits one
+// `verdict-invalidated` event — the old verdict is never silently kept.
+export function ingestPR(input, opts) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('ingestPR requires {repo, prNumber, headSha, baseSha}');
+  }
+  const { repo, prNumber, headSha, baseSha } = input;
+  if (typeof repo !== 'string' || repo.trim() === '') {
+    throw new Error('ingestPR requires repo');
+  }
+  if (prNumber === undefined || prNumber === null || prNumber === '') {
+    throw new Error('ingestPR requires prNumber');
+  }
+  requireSha('headSha', headSha);
+  requireSha('baseSha', baseSha);
+  const installPath = resolveInstallPath(opts);
+  if (!isRepoKnown(repo, installPath)) return { ignored: true };
+  const prPath = resolvePrPath(opts);
+  const prs = loadPrStore(prPath);
+  const key = prKey(repo, prNumber);
+  const prev = prs[key] || null;
+  if (prev && prev.headSha === headSha) return prev;
+  const record = { repo, prNumber, headSha, baseSha, ingestedAt: new Date().toISOString() };
+  prs[key] = record;
+  savePrStore(prs, prPath);
+  if (prev) {
+    append('verdict-invalidated', {
+      from: prev.headSha,
+      to: headSha,
+      actor: 'github-app',
+      reason: `pr:head-moved:${repo}#${String(prNumber)}:${prev.headSha}->${headSha}`,
+    });
+  } else {
+    append('pr.ingested', {
+      actor: 'github-app',
+      reason: `pr:ingested:${repo}#${String(prNumber)}:${headSha}`,
+    });
+  }
+  return record;
+}
+
+// Return the stored headSha for a repo+PR, or null when nothing ingested.
+export function captureHead(repo, prNumber, opts) {
+  if (typeof repo !== 'string' || repo.trim() === '') {
+    throw new Error('captureHead requires repo');
+  }
+  if (prNumber === undefined || prNumber === null || prNumber === '') {
+    throw new Error('captureHead requires prNumber');
+  }
+  const rec = loadPrStore(resolvePrPath(opts))[prKey(repo, prNumber)] || null;
+  return rec ? rec.headSha : null;
 }
