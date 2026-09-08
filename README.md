@@ -23,7 +23,7 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/data-model-v0.md` | Review, Verdict, EvidenceRef, RulePack |
 | `docs/risks.md` | What kills this product |
 | `docs/decisions.md` | Locked decisions + what needs owner approval |
-| `docs/todo.md` | Prototype-first backlog, no code yet |
+| `docs/todo.md` | Current validation/execution backlog; historical prototype tasks retained as evidence |
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
 | `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
 | `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
@@ -38,7 +38,7 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/override.md` | Verdict override: `--override` flags, `OVERRIDDEN` receipt line, fail-closed errors |
 | `docs/console-v1-design.md` | Console API contract (route table) + views |
 | `docs/console-v1b.md` | Org-wide topology/org-state flags |
-| `docs/rulepack-v1.2.md` | Current rule pack (21 rules) + deliberately-excluded rule |
+| `docs/rulepack-v1.7.md` | Current rule pack (26 rules); prior packs remain pinned/reproducible |
 | `docs/vision-software-verification-platform.md` | Platform vision |
 | `docs/roadmap-S0-S10.md` | S0–S10 roadmap (org policies at S5) |
 | `docs/cloudflare.md` | Cloudflare hosting path |
@@ -47,12 +47,13 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 ## CLI quickstart
 
 ```
-npm install -g @aftergraph/sentinel   # Node >= 20, no build step
+# from a local checkout; package.json is currently private:true
+npm link                          # Node >= 20, no build step
 sentinel review --pr 42               # [VERIFY]/manual — needs gh auth + network; exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
 sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
-sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules, 1.2.0: 21, 1.3.0: 22, 1.4.0: 23, 1.5.0: 24, default)
+sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20, 1.2.0: 21, 1.3.0: 22, 1.4.0: 23, 1.5.0: 24, 1.6.0: 25, 1.7.0: 26/default)
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
 git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
@@ -66,8 +67,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 466 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
-1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24, 1.6.0 = 25 per `lib/rulepack.js`).
+Full suite: `npm test`. The test count is intentionally not hardcoded here; current suite output is the volatile truth. Rule-pack counts are source-controlled in `lib/rulepack.js`: 1.0.0 = 6, 1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24, 1.6.0 = 25, 1.7.0 = 26 (default).
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
 `docs/mcp.md`), policy-gated review (`review --policy`, `docs/policy.md`),
@@ -108,4 +108,4 @@ CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never t
 
 ## Recommended next execution
 
-Prototype sprint: verdict-card mock + CLI output contract against 5 real PRs (manual runs, no automation). Then landing page/waitlist draft. Interviews/pilot are **optional later** — not active next actions.
+Current manual validation backlog: finish the five-real-PR validation set, confirm publishable competitor claims against vendor docs, and produce the auditor-acceptability memo. Interviews/pilot remain **optional later** and require owner activation.

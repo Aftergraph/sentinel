@@ -76,10 +76,10 @@ tail -n 1 /tmp/doccheck/ledger.jsonl > /tmp/doccheck/receipt.json
 node bin/sentinel.js verify --receipt /tmp/doccheck/receipt.json
 ```
 
-Observed output (exit `0`):
+Output shape (the exact digest and local subject depend on the receipt):
 
 ```text
-VALID — 3fa3e2e9874111c67491190be86b6104e355d0491b066908a4c5c3d08ee5cde7 (SHIP @ local-6, pack 1.6.0)
+VALID — <receipt-sha256> (SHIP @ local-..., pack 1.7.0)
 ```
 
 `verify` recomputes one hash. No network, no trust required.
@@ -100,4 +100,4 @@ Local `--diff` mode never emits STALE (nothing remote to drift against).
 - Hit a failure? See `docs/troubleshooting.md`.
 - Questions about verdicts, receipts, overrides? See `docs/faq.md`.
 - Reference: `docs/receipts-v0.1.md` (receipt/ledger contract),
-  `docs/override.md` (break-glass overrides), `docs/rulepack-v1.6.md` (rules).
+  `docs/override.md` (break-glass overrides), `docs/rulepack-v1.7.md` (current rules).

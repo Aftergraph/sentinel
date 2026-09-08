@@ -1,4 +1,4 @@
-# TODO — Sentinel by Aftergraph (prototype-first, no code)
+# TODO — Sentinel by Aftergraph (current validation and execution backlog)
 
 **Wedge guardrail:** Sentinel turns pull requests into merge-ready verdicts. First wedge: CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App.
 
@@ -14,7 +14,7 @@
 
 - [ ] Confirm [VERIFY] markers against vendor docs → publishable comparison — OPEN, owner: human (vendor-doc confirmation; markers still unconfirmed in `docs/competitor-analysis.md`)
 - [ ] Auditor-acceptability memo (immutability, export, retention) — OPEN, owner: human (no memo file yet; only `docs/data-model-v0.md` immutable-records note)
-- [x] CLI v0 scope: `review` command contract + rule-pack v0 (10 rules) + resolution memory — evidence: d1cf736 + `lib/rulepack.js` v1.2.0 (21 rules) + `lib/memory.js` + `bin/sentinel.js` review/policy/override/verify-run
+- [x] CLI v0 scope: `review` command contract + deterministic rule packs + resolution memory — current source truth: `lib/rulepack.js` v1.7.0 (26 rules) + `lib/memory.js` + `bin/sentinel.js` review/policy/override/verify-run; prior pack versions remain pinned
 - [x] GitHub App wrapper scope (verdict card update-in-place, rebase webhook) — evidence: `apps/github/card.js` (CARD_MARKER update-in-place) + `apps/github/app.js` webhook
 
 ## Optional later (explicitly NOT next)
