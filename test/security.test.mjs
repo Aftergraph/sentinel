@@ -111,7 +111,13 @@ test('security: duplicate delivery id short-circuits before api/store', async ()
 });
 
 // #8: runner caps output incrementally and kills process groups on timeout.
+// NOTE: runLocal takes an allowlist-only env, so pass PATH explicitly.
+// With env:{} the `node` binary is unresolvable on CI runners (it lives
+// outside the default exec path): both spawns fail ENOENT, the flood assert
+// passes vacuously (''.length <= 64KB) and the timeout assert fails with
+// FAIL instead of TIMEOUT. Passing PATH keeps the test hermetic AND honest.
 test('security: runner truncates flood output and honors timeout', async () => {
+  const runEnv = { PATH: process.env.PATH ?? '' };
   const dir = mkdtempSync(join(tmpdir(), 'sentinel-secflood-'));
   try {
     execFileSync('git', ['init', '-q', dir]);
@@ -122,13 +128,13 @@ test('security: runner truncates flood output and honors timeout', async () => {
     execFileSync('git', ['-C', dir, 'commit', '-qm', 'init']);
     const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const flood = await runLocal({
-      repoDir: dir, targetSha: sha, timeoutMs: 30000, env: {},
+      repoDir: dir, targetSha: sha, timeoutMs: 30000, env: runEnv,
       checks: [{ type: 'BUILD', command: ['node', '-e', 'process.stdout.write("y".repeat(300000))'] }],
     });
     assert.ok(flood.checks[0].stdout.length <= 65536, `capped at 64KB, got ${flood.checks[0].stdout.length}`);
     const t0 = Date.now();
     const slow = await runLocal({
-      repoDir: dir, targetSha: sha, timeoutMs: 1500, env: {},
+      repoDir: dir, targetSha: sha, timeoutMs: 1500, env: runEnv,
       checks: [{ type: 'TEST', command: ['node', '-e', 'setTimeout(() => {}, 60000)'] }],
     });
     const dt = Date.now() - t0;
