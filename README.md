@@ -2,7 +2,9 @@
 
 **Product core:** Sentinel by Aftergraph is a verified code-review product that turns pull requests into merge-ready verdicts.
 
-**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.7.0: 26 deterministic rules, see `docs/rulepack-v1.7.md`).
+**First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP / STALE verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.7.0: 26 deterministic rules, see `docs/rulepack-v1.7.md`).
+
+**Evidence status:** implementation, manual prototype scoring, historical CLI dogfood and live-fire proofs are tracked separately in `docs/evidence-status.md`. A historical score is not silently promoted into current-pack validation.
 
 ## Why Sentinel exists
 
@@ -19,11 +21,12 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/personas.md` | CTO, staff engineer, solo maintainer, compliance lead |
 | `docs/jobs-to-be-done.md` | The 6 jobs Sentinel is hired for |
 | `docs/validation-plan.md` | Desk research + prototype validation; interviews optional later |
+| `docs/evidence-status.md` | What is implemented, historically proven, manually scored, and still unverified |
 | `docs/ui-flows.md` | CLI output, PR comment shape, verdict card |
 | `docs/data-model-v0.md` | Review, Verdict, EvidenceRef, RulePack |
 | `docs/risks.md` | What kills this product |
 | `docs/decisions.md` | Locked decisions + what needs owner approval |
-| `docs/todo.md` | Prototype-first backlog, no code yet |
+| `docs/todo.md` | Current empirical and product/governance gates |
 | `docs/roadmap-90-days.md` | B (CLI) → A (GitHub App) sequencing |
 | `docs/policy.md` | Policy-file format reference + `review --policy` scoping semantic |
 | `docs/pipeline.md` | Verify pipeline: planning, isolated runner, sealed evidence, `verify run`, org registry |
@@ -38,7 +41,7 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 | `docs/override.md` | Verdict override: `--override` flags, `OVERRIDDEN` receipt line, fail-closed errors |
 | `docs/console-v1-design.md` | Console API contract (route table) + views |
 | `docs/console-v1b.md` | Org-wide topology/org-state flags |
-| `docs/rulepack-v1.2.md` | Current rule pack (21 rules) + deliberately-excluded rule |
+| `docs/rulepack-v1.7.md` | Current v1.7.0 rule pack (26 rules); older packs remain pin-addressable |
 | `docs/vision-software-verification-platform.md` | Platform vision |
 | `docs/roadmap-S0-S10.md` | S0–S10 roadmap (org policies at S5) |
 | `docs/cloudflare.md` | Cloudflare hosting path |
@@ -46,13 +49,13 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 
 ## CLI quickstart
 
-```
+```sh
 npm install -g @aftergraph/sentinel   # Node >= 20, no build step
 sentinel review --pr 42               # [VERIFY]/manual — needs gh auth + network; exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
 sentinel review --pr 42 --format gov > gov.json   # ci-result-shaped verdict (docs/receipts-v0.1.md)
-sentinel review --pr 42 --rule-pack 1.0.0  # pinned 6-rule pack (1.1.0: 20 rules, 1.2.0: 21, 1.3.0: 22, 1.4.0: 23, 1.5.0: 24, default)
+sentinel review --pr 42 --rule-pack 1.0.0  # pin historical 6-rule pack; default is v1.7.0 (26 rules)
 sentinel verify --receipt ./receipt.json   # offline VALID/INVALID check
 git diff | sentinel review --diff - --repo myorg/myrepo  # local mode, no GitHub needed
 git diff | sentinel review --diff - --repo myorg/myrepo --policy policies/web-default.yaml  # policy-gated (docs/policy.md)
@@ -66,8 +69,7 @@ sentinel --help                       # every flag documented; output matches th
 Every review appends a content-addressed receipt to `~/.sentinel/ledger.jsonl`
 (`docs/receipts-v0.1.md`) — re-running the same HEAD yields the same receipt id.
 
-Full suite: `npm test` — 466 tests green, 0 fail (rule packs: 1.0.0 = 6 rules,
-1.1.0 = 20, 1.2.0 = 21, 1.3.0 = 22, 1.4.0 = 23, 1.5.0 = 24, 1.6.0 = 25 per `lib/rulepack.js`).
+Run the canonical suite with `npm test`. Rule-pack inventory is owned by `lib/rulepack.js`: v1.0.0 = 6 rules, v1.1.0 = 20, v1.2.0 = 21, v1.3.0 = 22, v1.4.0 = 23, v1.5.0 = 24, v1.6.0 = 25, v1.7.0 = 26. Do not use a README test-count snapshot as release evidence; use the exact run at the exact commit.
 
 Beyond the CLI: `sentinel-mcp` (read-only MCP judge for coding-agent loops,
 `docs/mcp.md`), policy-gated review (`review --policy`, `docs/policy.md`),
@@ -83,7 +85,7 @@ isolated verify runs (`verify run`, `docs/pipeline.md`),
 
 ## Console (local web UI, PWA-ready)
 
-```
+```sh
 node bin/sentinel.js serve --port 8787
 # open http://127.0.0.1:8787 in a browser
 node bin/sentinel.js serve --topology platform-topology.json --org-state latest-org-state.json  # org-wide rows (docs/console-v1b.md)
@@ -108,4 +110,6 @@ CI gate (GitHub Actions — gate on exit code: 0 pass, 1 fail, 2 re-run, never t
 
 ## Recommended next execution
 
-Prototype sprint: verdict-card mock + CLI output contract against 5 real PRs (manual runs, no automation). Then landing page/waitlist draft. Interviews/pilot are **optional later** — not active next actions.
+Run the current v1.7.0 CLI against the five historical PR cases and capture exact Sentinel HEAD, target head/base SHAs, exit code, receipt id and findings. Re-prove `SHIP`, `DO_NOT_SHIP` and the transient `STALE` path at current HEAD, then move to a pinned precision/false-positive corpus and a real GitHub App webhook/check-run delivery. See `docs/evidence-status.md` and `docs/todo.md`.
+
+Interviews/pilot remain optional later; empirical product evidence comes first.
