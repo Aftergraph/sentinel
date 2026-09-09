@@ -1,5 +1,10 @@
 # Brand identity — Sentinel by Aftergraph
 
+> **Naming status: working title, not cleared.** The Sentinel name and final
+> product identity are under trademark/collision review
+> (`Aftergraph/brand#19`, `Aftergraph/sentinel#7`). This document is
+> pre-decision strategy work, not a final identity decision.
+
 **Wedge guardrail:** Sentinel turns pull requests into merge-ready verdicts. First wedge: CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App.
 
 ## Name: Sentinel by Aftergraph
