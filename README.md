@@ -1,5 +1,11 @@
 # Sentinel by Aftergraph
 
+> **Naming status: working title, not cleared.** The Sentinel name and final
+> product identity are under trademark/collision review
+> (`Aftergraph/brand#19`, `Aftergraph/sentinel#7`). Nothing in this repo's
+> marks or copy is a published final identity. See `docs/brand-identity.md`
+> and `brand/PROVENANCE.md`.
+
 **Product core:** Sentinel by Aftergraph is a verified code-review product that turns pull requests into merge-ready verdicts.
 
 **First wedge:** CLI review on exact HEAD → SHIP / DO NOT SHIP verdict with cited evidence → GitHub App. CLI v0 ships in this repo (`bin/sentinel.js`, rule-pack v1.7.0: 26 deterministic rules, see `docs/rulepack-v1.7.md`).
