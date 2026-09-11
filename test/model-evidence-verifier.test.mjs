@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { verifyCapturedCampaign } from '../lib/model-evidence-verifier.js';
@@ -53,4 +57,16 @@ test('rejects incomplete or duplicated task sets', () => {
   const input = document();
   input.trials[0].results.pop();
   assert.throws(() => verifyCapturedCampaign(input), /expected five results/);
+});
+
+test('CLI writes immutable-style attestation and exits zero on PASS', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-model-evidence-'));
+  const input = path.join(dir, 'capture.json');
+  const output = path.join(dir, 'attestation.json');
+  fs.writeFileSync(input, JSON.stringify(document()));
+  const result = spawnSync(process.execPath, ['scripts/verify-model-evidence.mjs', input, output], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const attestation = JSON.parse(fs.readFileSync(output, 'utf8'));
+  assert.equal(attestation.verdict, 'PASS');
+  assert.match(attestation.attestation_sha256, /^[0-9a-f]{64}$/);
 });
