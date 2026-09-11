@@ -1,0 +1,30 @@
+name: Independent Model Evidence Verifier
+
+on:
+  push:
+    paths:
+      - 'lib/model-evidence-verifier.js'
+      - 'test/model-evidence-verifier.test.mjs'
+      - 'package.json'
+      - '.github/workflows/model-evidence-verifier.yml'
+      - 'evidence/model-verification/**'
+  pull_request:
+    paths:
+      - 'lib/model-evidence-verifier.js'
+      - 'test/model-evidence-verifier.test.mjs'
+      - 'package.json'
+      - '.github/workflows/model-evidence-verifier.yml'
+      - 'evidence/model-verification/**'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify Node runtime
+        run: node --version
+      - name: Run Sentinel test suite
+        run: npm test
