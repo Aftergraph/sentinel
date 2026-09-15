@@ -95,9 +95,11 @@ test('independent PASS produces VERIFIED receipt bound to a distinct observer', 
   assert.equal(out.receipt.verifierRef,'sentinel:sandbox');
   assert.equal(out.receipt.checks.at(-1).observerRef,'sentinel:observer:readback-1');
   assert.equal(out.receipt.verifiedAt,'2026-09-16T00:01:00.000Z');
-  const {receiptId,receiptDigestSha256,...body}=out.receipt;
-  assert.equal(receiptDigestSha256,hashBody(body));
+  const {receiptId,receiptDigestSha256,verificationId,verifiedAt,...stableBody}=out.receipt;
+  assert.equal(receiptDigestSha256,hashBody(stableBody));
   assert.equal(receiptId,`dvr_${receiptDigestSha256}`);
+  assert.equal(verificationId,`dv_${receiptDigestSha256}`);
+  assert.equal(verifiedAt,'2026-09-16T00:01:00.000Z');
 });
 
 test('independent FAIL rejects the domain evidence', async () => {
@@ -135,4 +137,34 @@ test('missing verifier identity stays fail closed', async () => {
   });
   assert.equal(out.verdict,INDETERMINATE);
   assert.equal(out.reason,'verifier_ref_required');
+});
+
+
+test('receipt id is content-addressed and independent of verifiedAt', async () => {
+  const opts={
+    envelope:baseEnvelope(),verifierRef:'sentinel:sandbox',
+    independentCheck:async()=>({status:'PASS',observerRef:'sentinel:observer:readback-1',evidenceRefs:['obs:1']}),
+  };
+  const a=await verifyDomainEvidence({...opts,now:()=> '2026-09-16T00:01:00.000Z'});
+  const b=await verifyDomainEvidence({...opts,now:()=> '2026-09-16T00:02:00.000Z'});
+  assert.equal(a.receipt.receiptId,b.receipt.receiptId);
+  assert.equal(a.receipt.receiptDigestSha256,b.receipt.receiptDigestSha256);
+  assert.notEqual(a.receipt.verifiedAt,b.receipt.verifiedAt);
+});
+
+test('missing verifier on a bindable envelope still emits an auditable receipt', async () => {
+  const out=await verifyDomainEvidence({envelope:baseEnvelope()});
+  assert.equal(out.verdict,INDETERMINATE);
+  assert.equal(out.receipt.verifierRef,'sentinel:unattributed');
+  assert.match(out.receipt.receiptId,/^dvr_[a-f0-9]{64}$/);
+  assert.equal(out.receipt.verdict,INDETERMINATE);
+});
+
+test('unsupported schema on a bindable envelope emits a rejected receipt', async () => {
+  const envelope=baseEnvelope();
+  envelope.schema='aftergraph.domain-evidence/0.9';
+  const out=await verifyDomainEvidence({envelope,verifierRef:'sentinel:test'});
+  assert.equal(out.verdict,REJECTED);
+  assert.equal(out.receipt.verdict,REJECTED);
+  assert.equal(out.receipt.reason,'unsupported_domain_evidence_schema');
 });

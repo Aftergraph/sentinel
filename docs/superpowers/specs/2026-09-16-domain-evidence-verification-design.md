@@ -86,6 +86,8 @@ Sentinel emits `aftergraph.domain-verification.receipt/1.0` with:
 - `receiptDigestSha256`
 
 `subjectId` is SHA-256 over canonical `{tenantId, missionId, effectId, idempotencyKey, evidenceDigestSha256}`. `receiptId` is the receipt digest with a `dvr_` prefix.
+
+`receiptDigestSha256` is computed only over stable verification content: tenant/mission/effect/idempotency/evidence binding, verdict, reason, ordered checks, verifier and observer identity. `verifiedAt`, `receiptId` and `verificationId` are metadata/derived identifiers and MUST NOT influence the digest, so repeated verification of identical evidence and checks yields the same receipt id. Structurally bindable rejected/indeterminate attempts receive receipts; an input missing the fields needed to bind a subject does not fabricate one.
 ## Rendetalje projection
 
 Rendetalje must not import Sentinel as an execution dependency. It adds a pure projection from `reconcileGovernedEffect(...)` inputs/results into `aftergraph.domain-evidence/1.0`.
