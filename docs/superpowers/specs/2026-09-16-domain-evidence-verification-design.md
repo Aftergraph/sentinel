@@ -127,3 +127,16 @@ Check execution errors are represented as check results; raw secrets, request he
 6. Cross-repo sandbox proof yields VERIFIED with independent PASS and INDETERMINATE without it.
 7. No production endpoints, credentials, authority grants or provider writes are introduced.
 8. The existing code-review `lib/verify.js` semantics remain unchanged.
+
+## Durable verification service boundary
+
+Sentinel may persist domain-verification receipts in a separate content-addressed store. This store is not the code-review evidence store and does not grant authority, dispatch work, or mutate business state.
+
+The HTTP write boundary is `POST /api/domain/verify`. Its request body contains exactly one caller-owned field: `{ envelope }`. Verdicts, checks, verifier identity and observer identity are not accepted from the caller.
+
+`domainVerifierRef` and `domainIndependentCheck` are server-owned dependencies. A missing independent checker is a supported fail-closed state and yields a durable `INDETERMINATE` receipt; it can never yield `VERIFIED`.
+`sentinel serve` may configure `domainVerificationStorePath` and `domainVerifierRef` through the paired CLI/env settings. The stock CLI deliberately has no dynamic module-path or caller-provided checker option: loading a checker from an arbitrary path would create a new code-execution trust root. A deployment that needs `VERIFIED` must embed `createConsoleServer` with a Sentinel-owned checker implementation.
+
+All `/api/*` routes, including domain verification, remain under the Console's existing bearer-token gate and fixed-window rate limiter. Receipt reads use `GET /api/domain/verification/:receiptId` and revalidate the content-addressed receipt before returning it.
+
+The store is append-only at receipt identity: replaying the same stable receipt returns the first stored metadata instead of overwriting it. Corrupt or tampered receipts fail closed. An input too incomplete to bind tenant, mission, effect, idempotency and evidence digest does not fabricate a durable receipt.
