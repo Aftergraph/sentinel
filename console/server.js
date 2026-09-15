@@ -39,6 +39,8 @@ import {
 } from '../lib/rulepack.js';
 import { createOrgStore } from '../lib/org-store.js';
 import { createEvidenceStore } from '../lib/evidence-store.js';
+import { createDomainVerificationStore } from '../lib/domain-verification-store.js';
+import { verifyDomainEvidence } from '../lib/domain-verification.js';
 import { sealEvidence, hashBody } from '../lib/evidence.js';
 import { createFinding } from '../lib/finding.js';
 import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
@@ -255,7 +257,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, rateLimit, noExemptLoopback, logStream } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, domainVerifierRef, rateLimit, noExemptLoopback, logStream } = opts;
   // Trace sink for the one-structured-line-per-request log; injectable
   // for tests, defaults to process.stderr in production.
   const traceLog = logStream ?? process.stderr;
@@ -1033,6 +1035,57 @@ export function createConsoleServer(opts = {}) {
     }));
   }
 
+  // Domain verification persistence is intentionally separate from code-review
+  // evidence. The caller supplies only a domain-evidence envelope; verifier
+  // identity and independent observation are server-owned dependencies.
+  const domainVerificationStorePathSet = typeof domainVerificationStorePath === 'string' && domainVerificationStorePath.trim() !== '';
+  const domainVerifierConfigured = typeof domainVerifierRef === 'string' && domainVerifierRef.trim() !== '';
+
+  function loadDomainVerificationStore() {
+    if (!domainVerificationStorePathSet) throw new HttpError(503, 'domain verification unavailable');
+    try {
+      return createDomainVerificationStore(domainVerificationStorePath);
+    } catch {
+      throw new HttpError(500, 'domain verification store unavailable');
+    }
+  }
+
+  async function runDomainVerification(body) {
+    if (!domainVerificationStorePathSet || !domainVerifierConfigured) {
+      throw new HttpError(503, 'domain verification unavailable');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)
+      || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'envelope')) {
+      throw new HttpError(400, 'invalid domain verification request');
+    }
+    const result = await verifyDomainEvidence({
+      envelope: body.envelope,
+      independentCheck: domainIndependentCheck,
+      verifierRef: domainVerifierRef,
+    });
+    if (!result.receipt) throw new HttpError(422, 'domain evidence not bindable');
+    const store = loadDomainVerificationStore();
+    try {
+      store.put(result.receipt);
+    } catch {
+      throw new HttpError(500, 'domain verification store unavailable');
+    }
+    return result;
+  }
+
+  function getDomainVerificationReceipt(receiptId) {
+    if (!/^dvr_[a-f0-9]{64}$/.test(receiptId)) throw new HttpError(400, 'malformed domain verification receipt id');
+    const store = loadDomainVerificationStore();
+    let receipt;
+    try {
+      receipt = store.get(receiptId);
+    } catch {
+      throw new HttpError(500, 'domain verification store unavailable');
+    }
+    if (!receipt) throw new HttpError(404, 'no such domain verification receipt');
+    return receipt;
+  }
+
   // Verification runs (display only — an in-memory registry keyed by run
   // id, never persisted: entries live in this server process and are lost
   // on restart. Documented limit: at most MAX_VERIFY_RUNS runs are kept;
@@ -1521,6 +1574,19 @@ export function createConsoleServer(opts = {}) {
       }
       if (method === 'POST' && path === '/api/resolve') {
         return send(200, runResolve(await readJson(req)));
+      }
+      if (method === 'POST' && path === '/api/domain/verify') {
+        return send(200, await runDomainVerification(await readJson(req)));
+      }
+      if (method === 'GET' && path.startsWith('/api/domain/verification/')) {
+        let receiptId;
+        try {
+          receiptId = decodeURIComponent(path.slice('/api/domain/verification/'.length));
+        } catch {
+          throw new HttpError(400, 'malformed domain verification receipt id');
+        }
+        if (!receiptId || receiptId.includes('/')) return send(404, { error: 'not found' });
+        return send(200, getDomainVerificationReceipt(receiptId));
       }
       if (method === 'POST' && path === '/api/verify') {
         return send(200, runVerify(await readJson(req)));

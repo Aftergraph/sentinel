@@ -168,3 +168,13 @@ test('unsupported schema on a bindable envelope emits a rejected receipt', async
   assert.equal(out.receipt.verdict,REJECTED);
   assert.equal(out.receipt.reason,'unsupported_domain_evidence_schema');
 });
+
+
+test('independent PASS without observation evidence cannot produce VERIFIED', async () => {
+  const out=await verifyDomainEvidence({
+    envelope:baseEnvelope(),verifierRef:'sentinel:sandbox',
+    independentCheck:async()=>({status:'PASS',observerRef:'sentinel:observer:readback-1',evidenceRefs:[]}),
+  });
+  assert.equal(out.verdict,INDETERMINATE);
+  assert.equal(out.checks.at(-1).reason,'independent_evidence_required');
+});
