@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { hashBody } from '../lib/evidence.js';
 import {
   verifyDomainEvidence,
+  VERIFIED,
   REJECTED,
   INDETERMINATE,
 } from '../lib/domain-verification.js';
@@ -78,4 +79,60 @@ test('unsupported envelope schema is rejected fail closed', async () => {
   const out=await verifyDomainEvidence({envelope,verifierRef:'sentinel:test'});
   assert.equal(out.verdict,REJECTED);
   assert.equal(out.reason,'unsupported_domain_evidence_schema');
+});
+test('independent PASS produces VERIFIED receipt bound to a distinct observer', async () => {
+  const out=await verifyDomainEvidence({
+    envelope:baseEnvelope(),
+    verifierRef:'sentinel:sandbox',
+    now:()=> '2026-09-16T00:01:00.000Z',
+    independentCheck:async()=>({
+      status:'PASS',observerRef:'sentinel:observer:readback-1',evidenceRefs:['obs:1'],
+    }),
+  });
+  assert.equal(out.verdict,VERIFIED);
+  assert.equal(out.receipt.schema,'aftergraph.domain-verification.receipt/1.0');
+  assert.match(out.receipt.receiptId,/^dvr_[a-f0-9]{64}$/);
+  assert.equal(out.receipt.verifierRef,'sentinel:sandbox');
+  assert.equal(out.receipt.checks.at(-1).observerRef,'sentinel:observer:readback-1');
+  assert.equal(out.receipt.verifiedAt,'2026-09-16T00:01:00.000Z');
+  const {receiptId,receiptDigestSha256,...body}=out.receipt;
+  assert.equal(receiptDigestSha256,hashBody(body));
+  assert.equal(receiptId,`dvr_${receiptDigestSha256}`);
+});
+
+test('independent FAIL rejects the domain evidence', async () => {
+  const out=await verifyDomainEvidence({
+    envelope:baseEnvelope(),verifierRef:'sentinel:sandbox',
+    independentCheck:async()=>({status:'FAIL',observerRef:'sentinel:observer:readback-1',evidenceRefs:['obs:fail']}),
+  });
+  assert.equal(out.verdict,REJECTED);
+  assert.equal(out.checks.at(-1).status,'FAIL');
+});
+test('same observer and executor can never produce VERIFIED', async () => {
+  const envelope=baseEnvelope();
+  const out=await verifyDomainEvidence({
+    envelope,verifierRef:'sentinel:sandbox',
+    independentCheck:async()=>({status:'PASS',observerRef:envelope.subject.executorRef,evidenceRefs:[]}),
+  });
+  assert.equal(out.verdict,INDETERMINATE);
+  assert.equal(out.checks.at(-1).reason,'observer_not_independent');
+});
+
+test('independent checker failure is INDETERMINATE without leaking internals', async () => {
+  const out=await verifyDomainEvidence({
+    envelope:baseEnvelope(),verifierRef:'sentinel:sandbox',
+    independentCheck:async()=>{throw new Error('secret-provider-detail');},
+  });
+  assert.equal(out.verdict,INDETERMINATE);
+  assert.equal(out.checks.at(-1).reason,'independent_check_error');
+  assert.equal(JSON.stringify(out).includes('secret-provider-detail'),false);
+});
+
+test('missing verifier identity stays fail closed', async () => {
+  const out=await verifyDomainEvidence({
+    envelope:baseEnvelope(),
+    independentCheck:async()=>({status:'PASS',observerRef:'observer:1',evidenceRefs:[]}),
+  });
+  assert.equal(out.verdict,INDETERMINATE);
+  assert.equal(out.reason,'verifier_ref_required');
 });
