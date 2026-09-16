@@ -257,7 +257,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, domainVerifierRef, rateLimit, noExemptLoopback, logStream } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, domainVerifierRef, domainVerificationPublisher, rateLimit, noExemptLoopback, logStream } = opts;
   // Trace sink for the one-structured-line-per-request log; injectable
   // for tests, defaults to process.stderr in production.
   const traceLog = logStream ?? process.stderr;
@@ -1065,12 +1065,21 @@ export function createConsoleServer(opts = {}) {
     });
     if (!result.receipt) throw new HttpError(422, 'domain evidence not bindable');
     const store = loadDomainVerificationStore();
+    let storedReceipt;
     try {
-      store.put(result.receipt);
+      storedReceipt = store.put(result.receipt);
     } catch {
       throw new HttpError(500, 'domain verification store unavailable');
     }
-    return result;
+    const stableResult = Object.freeze({ ...result, receipt: storedReceipt });
+    if (stableResult.verdict !== 'INDETERMINATE' && typeof domainVerificationPublisher === 'function') {
+      try {
+        await domainVerificationPublisher({ receipt: storedReceipt, envelope: body.envelope, verdict: stableResult.verdict });
+      } catch {
+        throw new HttpError(502, 'domain verification publish failed');
+      }
+    }
+    return stableResult;
   }
 
   function getDomainVerificationReceipt(receiptId) {
