@@ -92,3 +92,40 @@ test('unbound malformed envelope cannot create a durable receipt',async()=>{
     assert.equal(existsSync(storePath),false);
   }finally{await c.close();}
 });
+test('terminal verification publishes the first persisted receipt metadata',async()=>{
+  const storePath=join(mkdtempSync(join(tmpdir(),'sentinel-domain-store-root-')),'domain.json');
+  const published=[]; let tick=0;
+  const c=await boot({domainVerificationStorePath:storePath,domainVerifierRef:'sentinel:service',domainIndependentCheck:async()=>({status:'PASS',observerRef:'sentinel:observer:1',evidenceRefs:['obs:1']}),domainVerificationPublisher:async(payload)=>{published.push(payload);}});
+  try{
+    const first=await c.call('POST','/api/domain/verify',{envelope:envelope()});
+    assert.equal(first.status,200); assert.equal(published.length,1);
+    assert.equal(published[0].receipt.receiptId,first.json.receipt.receiptId);
+    assert.equal(published[0].receipt.verifiedAt,first.json.receipt.verifiedAt);
+    tick++;
+    const second=await c.call('POST','/api/domain/verify',{envelope:envelope()});
+    assert.equal(second.status,200); assert.equal(published.length,2);
+    assert.equal(second.json.receipt.verifiedAt,first.json.receipt.verifiedAt);
+    assert.equal(published[1].receipt.verifiedAt,first.json.receipt.verifiedAt);
+  }finally{await c.close();}
+});
+
+test('INDETERMINATE is persisted but never published to WORKS',async()=>{
+  const storePath=join(mkdtempSync(join(tmpdir(),'sentinel-domain-store-root-')),'domain.json');
+  let publishes=0;
+  const c=await boot({domainVerificationStorePath:storePath,domainVerifierRef:'sentinel:service',domainVerificationPublisher:async()=>{publishes++;}});
+  try{
+    const out=await c.call('POST','/api/domain/verify',{envelope:envelope()});
+    assert.equal(out.status,200); assert.equal(out.json.verdict,'INDETERMINATE'); assert.equal(publishes,0);
+  }finally{await c.close();}
+});
+test('publisher failure returns 502 but keeps durable receipt for safe retry',async()=>{
+  const storePath=join(mkdtempSync(join(tmpdir(),'sentinel-domain-store-root-')),'domain.json');
+  const c=await boot({domainVerificationStorePath:storePath,domainVerifierRef:'sentinel:service',domainIndependentCheck:async()=>({status:'PASS',observerRef:'sentinel:observer:1',evidenceRefs:['obs:1']}),domainVerificationPublisher:async()=>{throw new Error('upstream secret');}});
+  try{
+    const out=await c.call('POST','/api/domain/verify',{envelope:envelope()});
+    assert.equal(out.status,502); assert.equal(out.json.error,'domain verification publish failed');
+    const raw=JSON.parse(readFileSync(storePath,'utf8'));
+    assert.equal(raw.receipts.length,1);
+    assert.equal(JSON.stringify(out.json).includes('upstream secret'),false);
+  }finally{await c.close();}
+});
