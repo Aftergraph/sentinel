@@ -32,6 +32,9 @@ import { parsePolicy as parseCliPolicy } from '../lib/policy.js';
 import { createFinding as cliCreateFinding } from '../lib/finding.js';
 import { executePipeline as cliExecutePipeline } from '../lib/pipeline.js';
 import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
+import { createDomainHttpReadback } from '../lib/domain-http-readback.js';
+import { createDomainReadbackObserver } from '../lib/domain-readback-observer.js';
+import { createWorksVerificationPublisher } from '../lib/domain-works-publisher.js';
 
 // --- Additive helpers: policy-gated review + verify run (new flags only) ---
 
@@ -437,7 +440,7 @@ function printHelp() {
 Usage:
   sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov] [--rule-pack ${SUPPORTED_PACKS.join('|')}] [--source ${SOURCE_ENUM.join('|')}] [--ledger-path <path>] [--no-ledger] [--config <path>] [--memory-path <path>]
   sentinel review --diff <file|-> [--repo owner/name] [--pr <n>] [--head-sha <sha>] [--base-sha <sha>] [same flags as above]
-  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>] [--org-store <p>] [--domain-verification-store <p>] [--domain-verifier-ref <id>]
+  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>] [--org-store <p>] [--domain-verification-store <p>] [--domain-verifier-ref <id>] [--domain-observer-url <url>] [--domain-observer-ref <id>] [--domain-works-url <url>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
   sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
@@ -471,6 +474,10 @@ Config (sentinel.config.json in cwd, or --config):
 Console v1b (org-wide, display-only — see docs/console-v1b.md):
   --topology <path>   Aftergraph platform-topology/1.0.json (repo list)
   --org-state <path>  generated latest-org-state.json (exact HEAD per repo)
+
+Domain verification runtime (credentials are env-only):
+  SENTINEL_DOMAIN_OBSERVER_TOKEN   bearer for the trusted read-back service
+  SENTINEL_WORKS_VERIFIER_TOKEN   dedicated WORKS verifier credential
 
 Local mode (no GitHub, no auth — pre-commit hooks, piped diffs):
   git diff | sentinel review --diff - --repo myorg/myrepo
@@ -513,6 +520,9 @@ try {
     'org-store': { type: 'string' },
     'domain-verification-store': { type: 'string' },
     'domain-verifier-ref': { type: 'string' },
+    'domain-observer-url': { type: 'string' },
+    'domain-observer-ref': { type: 'string' },
+    'domain-works-url': { type: 'string' },
     'no-ledger': { type: 'boolean', default: false },
     config: { type: 'string' },
     receipt: { type: 'string' },
@@ -630,6 +640,40 @@ try {
       console.error('Error: domain verification requires both store path and verifier ref');
       process.exit(1);
     }
+    const domainObserverUrl = values['domain-observer-url'] || process.env.SENTINEL_DOMAIN_OBSERVER_URL || undefined;
+    const domainObserverRef = values['domain-observer-ref'] || process.env.SENTINEL_DOMAIN_OBSERVER_REF || undefined;
+    const domainObserverToken = process.env.SENTINEL_DOMAIN_OBSERVER_TOKEN || undefined;
+    const domainWorksUrl = values['domain-works-url'] || process.env.SENTINEL_WORKS_URL || undefined;
+    const domainWorksToken = process.env.SENTINEL_WORKS_VERIFIER_TOKEN || undefined;
+    const observerParts = [domainObserverUrl, domainObserverRef, domainObserverToken];
+    const publisherParts = [domainWorksUrl, domainWorksToken];
+    if (observerParts.some(Boolean) && !observerParts.every(Boolean)) {
+      console.error('Error: domain observer requires url, ref and token');
+      process.exit(1);
+    }
+    if (publisherParts.some(Boolean) && !publisherParts.every(Boolean)) {
+      console.error('Error: domain WORKS publisher requires url and verifier token');
+      process.exit(1);
+    }
+    const domainRuntimeRequested = observerParts.some(Boolean) || publisherParts.some(Boolean);
+    if (domainRuntimeRequested && (!domainVerificationStore || !domainVerifierRef)) {
+      console.error('Error: domain runtime wiring requires verification store and verifier ref');
+      process.exit(1);
+    }
+    let domainIndependentCheck;
+    let domainVerificationPublisher;
+    try {
+      if (observerParts.every(Boolean)) {
+        const observe = createDomainHttpReadback({ baseUrl: domainObserverUrl, token: domainObserverToken });
+        domainIndependentCheck = createDomainReadbackObserver({ observerRef: domainObserverRef, observe });
+      }
+      if (publisherParts.every(Boolean)) {
+        domainVerificationPublisher = createWorksVerificationPublisher({ baseUrl: domainWorksUrl, token: domainWorksToken });
+      }
+    } catch (error) {
+      console.error(`Error: ${error?.message || 'invalid domain runtime configuration'}`);
+      process.exit(1);
+    }
     const handler = createConsoleServer({
       ledgerPath: values['ledger-path'] || undefined,
       memoryPath: values['memory-path'] || undefined,
@@ -643,6 +687,8 @@ try {
       orgStorePath: orgStoreFlag,
       domainVerificationStorePath: domainVerificationStore,
       domainVerifierRef,
+      domainIndependentCheck,
+      domainVerificationPublisher,
     });
     const port = parseInt(values.port || '8787', 10);
     listenConsole(handler, { port, host });
