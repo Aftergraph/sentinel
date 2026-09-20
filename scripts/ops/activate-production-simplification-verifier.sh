@@ -182,7 +182,8 @@ if [[ -f "$WORKS_BRIDGE_ENV" ]]; then
 fi
 set +a
 
-[[ ${#WORKS_VERIFIER_TOKEN:-0} -ge 32 ]] || fail "WORKS_VERIFIER_TOKEN is unavailable after activation"
+WORKS_VERIFIER_TOKEN="${WORKS_VERIFIER_TOKEN:-}"
+[[ ${#WORKS_VERIFIER_TOKEN} -ge 32 ]] || fail "WORKS_VERIFIER_TOKEN is unavailable after activation"
 
 ENV_TMP="$(mktemp "$SENTINEL_CONFIG_DIR/.sentinel.env.XXXXXX")"
 {
@@ -198,12 +199,12 @@ mv -f -- "$ENV_TMP" "$SENTINEL_ENV"
 ENV_REPLACED=true
 
 # 5. Atomically switch the exact source revision.
+SOURCE_REPLACED=true
 if [[ -d "$SENTINEL_ROOT" ]]; then
   rm -rf --one-file-system "$SENTINEL_ROOT"
 fi
 mv -- "$STAGE" "$SENTINEL_ROOT"
 STAGE=""
-SOURCE_REPLACED=true
 chown -R root:root "$SENTINEL_ROOT"
 chmod -R go-w "$SENTINEL_ROOT"
 
@@ -267,7 +268,8 @@ systemctl is-active --quiet "$SENTINEL_SERVICE" || fail "Sentinel service is not
 
 # 6. Enroll a short-lived WORKS caller without exposing the enrollment secret
 #    or bearer in argv, logs, source or persistent config.
-[[ ${#WORKS_ENROLL_SECRET:-0} -ge 1 ]] || fail "WORKS_ENROLL_SECRET unavailable in canonical service env"
+WORKS_ENROLL_SECRET="${WORKS_ENROLL_SECRET:-}"
+[[ ${#WORKS_ENROLL_SECRET} -ge 1 ]] || fail "WORKS_ENROLL_SECRET unavailable in canonical service env"
 ENROLL_BODY="$(python3 -c 'import json,sys; print(json.dumps({"worker_id":"wrkr_sentinel_verifier","challenge":sys.stdin.read()}))' <<<"$WORKS_ENROLL_SECRET")"
 ENROLL_RESPONSE="$(printf '%s' "$ENROLL_BODY" | curl -fsS --max-time 5 -X POST   -H 'Content-Type: application/json' --data-binary @- "$WORKS_URL/v1/workers/enroll")"
 WORKS_BEARER="$(printf '%s' "$ENROLL_RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("token",""); assert isinstance(v,str) and v; print(v,end="")')"
