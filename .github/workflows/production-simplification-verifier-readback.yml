@@ -24,7 +24,7 @@ jobs:
           file=.github/workflows/production-simplification-verifier-readback.yml
           grep -Fq 'workflow_dispatch:' "$file"
           grep -Fq "if: github.event_name == 'workflow_dispatch'" "$file"
-          ! grep -Eq 'systemctl (enable|restart|start|stop)|chmod 777|NOPASSWD|tee /etc|> */etc/' "$file"
+          ! grep -v "grep -E" "$file" | grep -Eq 'systemctl (enable|restart|start|stop)|chmod 777|NOPASSWD|tee /etc|> */etc/'
 
   readback:
     if: github.event_name == 'workflow_dispatch'
