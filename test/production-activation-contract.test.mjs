@@ -57,8 +57,10 @@ test('activation preserves the root boundary instead of weakening the runner',()
   }
 });
 
-test('activation uses canonical WORKS helper and fail-closed 503 to 401 proof',()=>{
-  assert.ok(source.includes('"$WORKS_HELPER" enable'));
+test('activation uses canonical WORKS helper via bash and fail-closed 503 to 401 proof',()=>{
+  assert.ok(source.includes('bash "$WORKS_HELPER" enable'));
+  assert.ok(source.includes('[[ -f "$WORKS_HELPER" && ! -L "$WORKS_HELPER" ]]'));
+  assert.ok(source.includes('bash "$WORKS_HELPER" status'));
   assert.ok(source.includes('"verification_ingest":"unconfigured"'));
   assert.ok(source.includes('"verification_ingest":"configured"'));
   assert.ok(source.includes('WRONG_TOKEN_STATUS'));
