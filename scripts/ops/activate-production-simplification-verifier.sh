@@ -12,10 +12,12 @@ SENTINEL_ENV="$SENTINEL_CONFIG_DIR/sentinel.env"
 SENTINEL_UNIT="/etc/systemd/system/aftergraph-sentinel.service"
 SENTINEL_SERVICE="aftergraph-sentinel.service"
 SENTINEL_URL="http://127.0.0.1:8787"
-WORKS_ROOT="/root/works-venture"
+WORKS_HELPER_REPOSITORY="https://github.com/Aftergraph/works-execution.git"
+WORKS_HELPER_REVISION="f4e77999de393de8010810ac4ba337d91603b661"
 WORKS_ENV="/etc/works/works.env"
 WORKS_BRIDGE_ENV="/etc/aftergraph/v21-bridge.env"
-WORKS_HELPER="$WORKS_ROOT/scripts/ops/works-verifier-credential.sh"
+WORKS_HELPER_STAGE=""
+WORKS_HELPER=""
 WORKS_SERVICE="works-api.service"
 WORKS_URL="http://127.0.0.1:18191"
 SKILL_DIGEST="sha256:6e2482aec50e3e5f24c751108a81a444f3706dd67265b6b174336a05c25402c5"
@@ -37,7 +39,6 @@ for cmd in bash chown chmod cp curl date git grep install mktemp mv node npm ope
   require_cmd "$cmd"
 done
 
-[[ -f "$WORKS_HELPER" && ! -L "$WORKS_HELPER" ]] || fail "canonical WORKS verifier helper missing or symlinked: $WORKS_HELPER"
 [[ -f "$WORKS_ENV" && ! -L "$WORKS_ENV" ]] || fail "canonical WORKS env missing or symlinked"
 [[ "$(readlink -f -- "$WORKS_ENV")" == "$WORKS_ENV" ]] || fail "canonical WORKS env redirected"
 [[ "$(stat -c '%u:%g' "$WORKS_ENV")" == "0:0" ]] || fail "WORKS env must be root-owned"
@@ -51,6 +52,7 @@ WORK_BODY=""
 SENTINEL_BODY=""
 SENTINEL_RESPONSE=""
 WORK_RESPONSE=""
+WORKS_HELPER_STAGE=""
 SOURCE_REPLACED=false
 ENV_REPLACED=false
 UNIT_REPLACED=false
@@ -123,11 +125,24 @@ rollback() {
   fi
 
   [[ -z "$STAGE" ]] || rm -rf --one-file-system "$STAGE" 2>/dev/null || true
+  [[ -z "${WORKS_HELPER_STAGE:-}" ]] || rm -rf --one-file-system "$WORKS_HELPER_STAGE" 2>/dev/null || true
   rm -rf --one-file-system "$BACKUP_ROOT" 2>/dev/null || true
   printf 'sentinel-production-activation: rolled back after failure\n' >&2
   exit "$rc"
 }
 trap rollback ERR INT TERM HUP
+
+# Stage the WORKS-owned verifier helper from its exact reviewed owner revision.
+# Production may run an intentionally older/dirty WORKS checkout; activation
+# must not mutate that live checkout merely to obtain this helper.
+WORKS_HELPER_STAGE="$(mktemp -d /run/works-verifier-helper.XXXXXX)"
+git -C "$WORKS_HELPER_STAGE" init -q
+git -C "$WORKS_HELPER_STAGE" remote add origin "$WORKS_HELPER_REPOSITORY"
+git -C "$WORKS_HELPER_STAGE" fetch --quiet --depth=1 origin "$WORKS_HELPER_REVISION"
+git -C "$WORKS_HELPER_STAGE" checkout --quiet --detach FETCH_HEAD
+[[ "$(git -C "$WORKS_HELPER_STAGE" rev-parse HEAD)" == "$WORKS_HELPER_REVISION" ]] || fail "WORKS helper revision mismatch"
+WORKS_HELPER="$WORKS_HELPER_STAGE/scripts/ops/works-verifier-credential.sh"
+[[ -f "$WORKS_HELPER" && ! -L "$WORKS_HELPER" ]] || fail "pinned WORKS verifier helper missing or symlinked"
 
 # 1. Activate the canonical WORKS verifier credential in-place.
 WORKS_STATUS_BEFORE="$(bash "$WORKS_HELPER" status)"
@@ -399,6 +414,8 @@ curl -fsS --max-time 2 "$WORKS_URL/healthz" >/dev/null
 curl -fsS --max-time 2 "$SENTINEL_URL/api/healthz" >/dev/null
 
 cleanup_sensitive
+[[ -z "$WORKS_HELPER_STAGE" ]] || rm -rf --one-file-system "$WORKS_HELPER_STAGE"
+WORKS_HELPER_STAGE=""
 rm -rf --one-file-system "$BACKUP_ROOT"
 trap - ERR INT TERM HUP
 

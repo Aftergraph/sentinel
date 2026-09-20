@@ -17,8 +17,8 @@ test('activation pins the exact production host and reviewed Sentinel revision',
   for(const fragment of [
     'vmi3517816',
     '3189785fc8ce866244c51f9611f93d19c191331c',
-    'WORKS_ROOT="/root/works-venture"',
-    'WORKS_HELPER="$WORKS_ROOT/scripts/ops/works-verifier-credential.sh"',
+    'WORKS_HELPER_REPOSITORY="https://github.com/Aftergraph/works-execution.git"',
+    'WORKS_HELPER_REVISION="f4e77999de393de8010810ac4ba337d91603b661"',
     '/etc/works/works.env',
     'works-api.service',
     'http://127.0.0.1:18191',
@@ -59,6 +59,7 @@ test('activation preserves the root boundary instead of weakening the runner',()
 
 test('activation uses canonical WORKS helper via bash and fail-closed 503 to 401 proof',()=>{
   assert.ok(source.includes('bash "$WORKS_HELPER" enable'));
+  assert.ok(source.includes('WORKS_HELPER="$WORKS_HELPER_STAGE/scripts/ops/works-verifier-credential.sh"'));
   assert.ok(source.includes('[[ -f "$WORKS_HELPER" && ! -L "$WORKS_HELPER" ]]'));
   assert.ok(source.includes('bash "$WORKS_HELPER" status'));
   assert.ok(source.includes('"verification_ingest":"unconfigured"'));
@@ -124,4 +125,18 @@ test('activation has rollback for source, env, unit and newly activated WORKS cr
   ]){
     assert.ok(source.includes(fragment),`missing rollback invariant: ${fragment}`);
   }
+});
+
+test('activation stages the WORKS-owned credential helper from an exact immutable revision',()=>{
+  assert.ok(source.includes('WORKS_HELPER_REVISION="f4e77999de393de8010810ac4ba337d91603b661"'));
+  assert.ok(source.includes('git -C "$WORKS_HELPER_STAGE" fetch --quiet --depth=1 origin "$WORKS_HELPER_REVISION"'));
+  assert.ok(source.includes('[[ "$(git -C "$WORKS_HELPER_STAGE" rev-parse HEAD)" == "$WORKS_HELPER_REVISION" ]]'));
+  assert.equal(source.includes('git -C /root/works-venture checkout'),false);
+  assert.equal(source.includes('git -C /root/works-venture pull'),false);
+  assert.equal(source.includes('git -C /root/works-venture reset'),false);
+});
+
+test('activation cleans the staged WORKS helper on success and rollback',()=>{
+  const cleanupUses=(source.match(/rm -rf --one-file-system "\$WORKS_HELPER_STAGE"/gu)||[]).length;
+  assert.ok(cleanupUses>=2);
 });
