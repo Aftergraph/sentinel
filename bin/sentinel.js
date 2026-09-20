@@ -35,6 +35,7 @@ import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-gra
 import { createDomainHttpReadback } from '../lib/domain-http-readback.js';
 import { createDomainReadbackObserver } from '../lib/domain-readback-observer.js';
 import { createWorksVerificationPublisher } from '../lib/domain-works-publisher.js';
+import { createGitHubSimplificationObserver } from '../lib/simplification-github-observer.js';
 
 // --- Additive helpers: policy-gated review + verify run (new flags only) ---
 
@@ -661,6 +662,7 @@ try {
       process.exit(1);
     }
     let domainIndependentCheck;
+    let simplificationIndependentCheck;
     let domainVerificationPublisher;
     try {
       if (observerParts.every(Boolean)) {
@@ -669,6 +671,12 @@ try {
       }
       if (publisherParts.every(Boolean)) {
         domainVerificationPublisher = createWorksVerificationPublisher({ baseUrl: domainWorksUrl, token: domainWorksToken });
+      }
+      if (ghToken) {
+        simplificationIndependentCheck = createGitHubSimplificationObserver({
+          token: ghToken,
+          observerRef: 'sentinel:observer:github-actions',
+        });
       }
     } catch (error) {
       console.error(`Error: ${error?.message || 'invalid domain runtime configuration'}`);
@@ -688,6 +696,7 @@ try {
       domainVerificationStorePath: domainVerificationStore,
       domainVerifierRef,
       domainIndependentCheck,
+      simplificationIndependentCheck,
       domainVerificationPublisher,
     });
     const port = parseInt(values.port || '8787', 10);
