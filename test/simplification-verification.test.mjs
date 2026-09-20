@@ -148,9 +148,10 @@ test('independent FAIL rejects a superficially passing simplification package',a
 
 test('executor cannot also be the independent verifier',async()=>{
   const e=envelope();
+  e.subject.executorRef='sentinel:simplification';
   const out=await verifySimplificationEvidence({
     envelope:e,
-    verifierRef:e.subject.executorRef,
+    verifierRef:'sentinel:simplification',
     independentCheck:passCheck(),
   });
   assert.equal(out.verdict,INDETERMINATE);
