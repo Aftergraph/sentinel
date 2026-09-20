@@ -1,13 +1,33 @@
 name: Production simplification verifier readback
 
 on:
+  push:
+    branches:
+      - ops/production-verifier-readback-proof
+  pull_request:
+    paths:
+      - '.github/workflows/production-simplification-verifier-readback.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate readback contract is non-mutating and manual-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=.github/workflows/production-simplification-verifier-readback.yml
+          grep -Fq 'workflow_dispatch:' "$file"
+          grep -Fq "if: github.event_name == 'workflow_dispatch'" "$file"
+          ! grep -Eq 'systemctl (enable|restart|start|stop)|chmod 777|NOPASSWD|tee /etc|> */etc/' "$file"
+
   readback:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, aftergraph-ci]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
