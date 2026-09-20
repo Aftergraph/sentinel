@@ -1,0 +1,48 @@
+{
+  "schema": "aftergraph.operator-activation-request/1.0",
+  "id": "sentinel-simplification-verifier-production-v1",
+  "status": "WAITING_HUMAN",
+  "authority": {
+    "required_principal": "root",
+    "required_host": "vmi3517816",
+    "generic_runner_principal": "agci",
+    "generic_runner_must_remain_unprivileged": true
+  },
+  "source": {
+    "repository": "Aftergraph/sentinel",
+    "activation_commit": "6bf1de6845b4a0606d3017a99851206beff860e2",
+    "activation_script": "scripts/ops/activate-production-simplification-verifier.sh",
+    "runbook": "docs/production-simplification-verifier.md",
+    "readback_commit": "e446592182e24c81b204b65e59baeda28dde52ea",
+    "readback_workflow": ".github/workflows/production-simplification-verifier-readback.yml",
+    "tracking_issue": "https://github.com/Aftergraph/sentinel/issues/29"
+  },
+  "execution": {
+    "command": [
+      "set -euo pipefail",
+      "d=$(mktemp -d /root/sentinel-activation.XXXXXX)",
+      "git clone -q https://github.com/Aftergraph/sentinel.git \"$d\"",
+      "git -C \"$d\" checkout -q --detach 6bf1de6845b4a0606d3017a99851206beff860e2",
+      "bash \"$d/scripts/ops/activate-production-simplification-verifier.sh\"",
+      "rm -rf \"$d\""
+    ],
+    "secret_values_must_not_be_logged": true,
+    "privilege_widening_forbidden": true
+  },
+  "acceptance": {
+    "sentinel_service_active": true,
+    "works_health": true,
+    "works_verifier_ingest_configured": true,
+    "independent_observer": "sentinel:observer:github-actions",
+    "simplification_verdict": "VERIFIED",
+    "work_id_pattern": "^wrk_[a-f0-9]{32}$",
+    "receipt_id_pattern": "^dvr_[a-f0-9]{64}$",
+    "works_projection": "passed",
+    "wrong_token_status": 401,
+    "credential_value_exposed": false
+  },
+  "post_activation": {
+    "run_non_mutating_readback": true,
+    "close_tracking_issue_only_after_all_acceptance_proven": true
+  }
+}
