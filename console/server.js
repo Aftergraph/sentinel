@@ -41,6 +41,8 @@ import { createOrgStore } from '../lib/org-store.js';
 import { createEvidenceStore } from '../lib/evidence-store.js';
 import { createDomainVerificationStore } from '../lib/domain-verification-store.js';
 import { verifyDomainEvidence } from '../lib/domain-verification.js';
+import { verifySimplificationEvidence } from '../lib/simplification-verification.js';
+import { adaptSimplificationProducerClaim } from '../lib/simplification-producer-claim.js';
 import { sealEvidence, hashBody } from '../lib/evidence.js';
 import { createFinding } from '../lib/finding.js';
 import { buildRepoGraph, resolveRepoFile, blastRadius } from '../lib/context-graph.js';
@@ -257,7 +259,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, domainVerifierRef, domainVerificationPublisher, rateLimit, noExemptLoopback, logStream } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, simplificationIndependentCheck, domainVerifierRef, domainVerificationPublisher, rateLimit, noExemptLoopback, logStream } = opts;
   // Trace sink for the one-structured-line-per-request log; injectable
   // for tests, defaults to process.stderr in production.
   const traceLog = logStream ?? process.stderr;
@@ -1082,6 +1084,68 @@ export function createConsoleServer(opts = {}) {
     return stableResult;
   }
 
+  async function runSimplificationVerification(body) {
+    if (!domainVerificationStorePathSet || !domainVerifierConfigured) {
+      throw new HttpError(503, 'simplification verification unavailable');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new HttpError(400, 'invalid simplification verification request');
+    }
+    const allowed = new Set(['claim', 'missionId', 'executorRef', 'observedAt']);
+    for (const key of Object.keys(body)) {
+      if (!allowed.has(key)) throw new HttpError(400, `unknown field "${key}"`);
+    }
+    if (!Object.hasOwn(body, 'claim')
+      || typeof body.missionId !== 'string' || !body.missionId.trim()
+      || typeof body.executorRef !== 'string' || !body.executorRef.trim()
+      || typeof body.observedAt !== 'string' || !body.observedAt.trim()) {
+      throw new HttpError(400, 'claim, missionId, executorRef and observedAt are required');
+    }
+
+    let envelope;
+    try {
+      envelope = adaptSimplificationProducerClaim({
+        claim: body.claim,
+        missionId: body.missionId,
+        executorRef: body.executorRef,
+        observedAt: body.observedAt,
+      });
+    } catch (error) {
+      const safe = error?.message === 'producer_self_verification_forbidden'
+        ? 'producer self-verification forbidden'
+        : 'invalid simplification producer claim';
+      throw new HttpError(400, safe);
+    }
+
+    const result = await verifySimplificationEvidence({
+      envelope,
+      independentCheck: simplificationIndependentCheck,
+      verifierRef: domainVerifierRef,
+    });
+    if (!result.receipt) throw new HttpError(422, 'simplification evidence not bindable');
+
+    const store = loadDomainVerificationStore();
+    let storedReceipt;
+    try {
+      storedReceipt = store.put(result.receipt);
+    } catch {
+      throw new HttpError(500, 'domain verification store unavailable');
+    }
+    const stableResult = Object.freeze({ ...result, receipt: storedReceipt });
+    if (stableResult.verdict !== 'INDETERMINATE' && typeof domainVerificationPublisher === 'function') {
+      try {
+        await domainVerificationPublisher({
+          receipt: storedReceipt,
+          envelope,
+          verdict: stableResult.verdict,
+        });
+      } catch {
+        throw new HttpError(502, 'simplification verification publish failed');
+      }
+    }
+    return stableResult;
+  }
+
   function getDomainVerificationReceipt(receiptId) {
     if (!/^dvr_[a-f0-9]{64}$/.test(receiptId)) throw new HttpError(400, 'malformed domain verification receipt id');
     const store = loadDomainVerificationStore();
@@ -1586,6 +1650,9 @@ export function createConsoleServer(opts = {}) {
       }
       if (method === 'POST' && path === '/api/domain/verify') {
         return send(200, await runDomainVerification(await readJson(req)));
+      }
+      if (method === 'POST' && path === '/api/simplification/verify') {
+        return send(200, await runSimplificationVerification(await readJson(req)));
       }
       if (method === 'GET' && path.startsWith('/api/domain/verification/')) {
         let receiptId;
