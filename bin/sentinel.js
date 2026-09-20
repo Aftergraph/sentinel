@@ -672,12 +672,10 @@ try {
       if (publisherParts.every(Boolean)) {
         domainVerificationPublisher = createWorksVerificationPublisher({ baseUrl: domainWorksUrl, token: domainWorksToken });
       }
-      if (ghToken) {
-        simplificationIndependentCheck = createGitHubSimplificationObserver({
-          token: ghToken,
-          observerRef: 'sentinel:observer:github-actions',
-        });
-      }
+      simplificationIndependentCheck = createGitHubSimplificationObserver({
+        token: ghToken,
+        observerRef: 'sentinel:observer:github-actions',
+      });
     } catch (error) {
       console.error(`Error: ${error?.message || 'invalid domain runtime configuration'}`);
       process.exit(1);
