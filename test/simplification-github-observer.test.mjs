@@ -105,3 +105,17 @@ test('evidence ref proof tag must match the obligation that claims it',async()=>
   const out=await observe(value);
   assert.equal(out.status,'FAIL');
 });
+
+test('public GitHub evidence can verify without a token',async()=>{
+  const observe=createGitHubSimplificationObserver({fetchImpl:fetchFixture()});
+  const out=await observe(input());
+  assert.equal(out.status,'PASS');
+});
+
+test('unauthenticated 404 stays INDETERMINATE because the repository may be private',async()=>{
+  const observe=createGitHubSimplificationObserver({
+    fetchImpl:async()=>jsonResponse({message:'not found'},404),
+  });
+  const out=await observe(input());
+  assert.equal(out.status,'INDETERMINATE');
+});
