@@ -37,7 +37,7 @@ for cmd in bash chown chmod cp curl date git grep install mktemp mv node npm ope
   require_cmd "$cmd"
 done
 
-[[ -x "$WORKS_HELPER" ]] || fail "canonical WORKS verifier helper missing: $WORKS_HELPER"
+[[ -f "$WORKS_HELPER" && ! -L "$WORKS_HELPER" ]] || fail "canonical WORKS verifier helper missing or symlinked: $WORKS_HELPER"
 [[ -f "$WORKS_ENV" && ! -L "$WORKS_ENV" ]] || fail "canonical WORKS env missing or symlinked"
 [[ "$(readlink -f -- "$WORKS_ENV")" == "$WORKS_ENV" ]] || fail "canonical WORKS env redirected"
 [[ "$(stat -c '%u:%g' "$WORKS_ENV")" == "0:0" ]] || fail "WORKS env must be root-owned"
@@ -130,18 +130,18 @@ rollback() {
 trap rollback ERR INT TERM HUP
 
 # 1. Activate the canonical WORKS verifier credential in-place.
-WORKS_STATUS_BEFORE="$("$WORKS_HELPER" status)"
+WORKS_STATUS_BEFORE="$(bash "$WORKS_HELPER" status)"
 case "$WORKS_STATUS_BEFORE" in
   *'"verification_ingest":"configured"'*) ;;
   *'"verification_ingest":"unconfigured"'*)
     cp -a -- "$WORKS_ENV" "$BACKUP_ROOT/works.env"
-    "$WORKS_HELPER" enable >/dev/null
+    bash "$WORKS_HELPER" enable >/dev/null
     WORKS_ACTIVATED=true
     ;;
   *) fail "unexpected WORKS verifier status" ;;
 esac
 
-WORKS_STATUS_AFTER="$("$WORKS_HELPER" status)"
+WORKS_STATUS_AFTER="$(bash "$WORKS_HELPER" status)"
 [[ "$WORKS_STATUS_AFTER" == *'"verification_ingest":"configured"'* ]] || fail "WORKS verifier ingest did not activate"
 curl -fsS --max-time 2 "$WORKS_URL/healthz" >/dev/null || fail "WORKS unhealthy after verifier activation"
 
