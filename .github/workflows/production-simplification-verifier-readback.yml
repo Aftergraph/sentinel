@@ -1,0 +1,64 @@
+name: Production simplification verifier readback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    runs-on: [self-hosted, linux, x64, aftergraph-ci]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Verify production host and services
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname -s)" = "vmi3517816"
+          systemctl is-active --quiet works-api.service
+          systemctl is-active --quiet aftergraph-sentinel.service
+          curl -fsS --max-time 2 http://127.0.0.1:18191/healthz >/dev/null
+          curl -fsS --max-time 2 http://127.0.0.1:8787/api/healthz >/dev/null
+
+      - name: Verify Sentinel deployment identity and hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="3189785fc8ce866244c51f9611f93d19c191331c"
+          test -d /opt/aftergraph/sentinel/.git
+          actual="$(git -C /opt/aftergraph/sentinel rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test "$(systemctl show aftergraph-sentinel.service -p User --value)" = "sentinel"
+          test "$(systemctl show aftergraph-sentinel.service -p Group --value)" = "sentinel"
+          test "$(systemctl show aftergraph-sentinel.service -p NoNewPrivileges --value)" = "yes"
+          test "$(systemctl show aftergraph-sentinel.service -p ProtectSystem --value)" = "strict"
+          test "$(systemctl show aftergraph-sentinel.service -p ProtectHome --value)" = "yes"
+          printf '{"sentinel_revision":"%s","service_active":true,"hardening_verified":true}\n' "$actual"
+
+      - name: Verify WORKS verifier boundary is configured and fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST \
+            -H 'Content-Type: application/json' \
+            -H 'X-WORKS-Verifier-Token: deliberately-wrong-readback-proof-000000000000000000' \
+            --data '{"result":"passed","verifier_id":"sentinel:readback-proof","evidence_ref":"dvr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verified_at":"2026-09-20T00:00:00Z"}' \
+            http://127.0.0.1:18191/v1/works/wrk_readback_probe/verification || true)"
+          test "$code" = "401"
+          printf '{"works_verifier_boundary":"configured","wrong_token_status":401}\n'
+
+      - name: Verify no runner privilege widening
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = "agci"
+          test "$(id -u)" -ne 0
+          ! sudo -n true >/dev/null 2>&1
+          test ! -w /etc/works
+          test ! -w /etc/systemd/system
+          printf '{"runner":"agci","root":false,"sudo":false,"privilege_widening":false}\n'
