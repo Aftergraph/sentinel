@@ -8,7 +8,10 @@ const receipt={
   schema:'aftergraph.domain-verification.receipt/1.0',receiptId:'dvr_'+ 'a'.repeat(64),
   verdict:'VERIFIED',verifierRef:'sentinel:domain-verifier',verifiedAt:'2026-09-16T00:30:00Z',
 };
-const envelope={subject:{missionId:'wrk_0123456789abcdef0123456789abcdef'}};
+const envelope={subject:{
+  missionId:'mis_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  workId:'wrk_0123456789abcdef0123456789abcdef',
+}};
 
 async function server(handler){
   const s=http.createServer(handler);s.listen(0,'127.0.0.1');await once(s,'listening');
@@ -39,6 +42,16 @@ test('REJECTED publishes failed; INDETERMINATE is never published',async()=>{
     assert.equal(last.result,'failed');
     await publish({receipt:{...receipt,verdict:'INDETERMINATE'},envelope});
     assert.equal(calls,1);
+  }finally{s.close();await once(s,'close');}
+});
+
+test('legacy envelope without workId falls back to missionId route key',async()=>{
+  let seenUrl;
+  const {s,base}=await server((req,res)=>{seenUrl=req.url;res.writeHead(200,{'content-type':'application/json'});res.end('{}');});
+  try{
+    const publish=createWorksVerificationPublisher({baseUrl:base,token:'l'.repeat(32)});
+    await publish({receipt,envelope:{subject:{missionId:'wrk_ffffffffffffffffffffffffffffffff'}}});
+    assert.equal(seenUrl,'/v1/works/wrk_ffffffffffffffffffffffffffffffff/verification');
   }finally{s.close();await once(s,'close');}
 });
 
