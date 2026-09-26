@@ -4,7 +4,17 @@ on:
   push:
     paths:
       - 'lib/model-evidence-verifier.js'
+      - 'lib/domain-verification.js'
+      - 'lib/domain-works-publisher.js'
+      - 'test/domain-verification.test.mjs'
+      - 'test/domain-works-publisher.test.mjs'
+      - 'test/cli-domain-runtime.test.mjs'
       - 'test/model-evidence-verifier.test.mjs'
+      - 'lib/domain-verification.js'
+      - 'lib/domain-works-publisher.js'
+      - 'test/domain-verification.test.mjs'
+      - 'test/domain-works-publisher.test.mjs'
+      - 'test/cli-domain-runtime.test.mjs'
       - 'package.json'
       - '.github/workflows/model-evidence-verifier.yml'
       - 'evidence/model-verification/**'
