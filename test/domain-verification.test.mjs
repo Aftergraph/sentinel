@@ -13,7 +13,8 @@ function baseEnvelope() {
     schema:'rendetalje.provider-effect-reconciliation/1.0',
     tenantId:'tenant:rendetalje',
     subjectRef:'legacy-renos:customer:c1',
-    missionId:'wrk_0123456789abcdef0123456789abcdef',
+    missionId:'mis_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    workId:'wrk_0123456789abcdef0123456789abcdef',
     worksExecutionId:'exec_sandbox_1',
     effectId:'effect_sandbox_1',
     idempotencyKey:'idem_sandbox_1',
@@ -26,6 +27,7 @@ function baseEnvelope() {
     subject:{
       tenantId:body.tenantId,
       missionId:body.missionId,
+      workId:body.workId,
       effectId:body.effectId,
       idempotencyKey:body.idempotencyKey,
       subjectRef:body.subjectRef,
@@ -63,6 +65,16 @@ test('tampered evidence digest is rejected', async () => {
   assert.equal(out.checks[0].status,'FAIL');
   assert.equal(out.checks[0].reason,'evidence_digest_mismatch');
 });
+test('work id correlation mismatch is rejected', async () => {
+  const envelope=baseEnvelope();
+  envelope.subject.workId='wrk_ffffffffffffffffffffffffffffffff';
+  const out=await verifyDomainEvidence({envelope,verifierRef:'sentinel:test'});
+  assert.equal(out.verdict,REJECTED);
+  const correlation=out.checks.find(c=>c.type==='SUBJECT_CORRELATION');
+  assert.equal(correlation.status,'FAIL');
+  assert.equal(correlation.reason,'subject_correlation_mismatch');
+});
+
 test('subject correlation mismatch is rejected', async () => {
   const envelope=baseEnvelope();
   envelope.subject.effectId='effect_spoofed';
