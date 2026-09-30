@@ -1,0 +1,147 @@
+name: Economic Real Rail Independent Evidence
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/economic-real-rail-independent.yml"
+      - "lib/economic-rail-verification.js"
+      - "test/economic-rail-verification.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-rail-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Sentinel rail-verifier unit tests
+        run: node --test test/economic-rail-verification.test.mjs
+
+      - name: Capture public Ethereum finalized evidence
+        env:
+          EVM_RPC_URL: https://cloudflare-eth.com/v1/mainnet
+        run: |
+          mkdir -p evidence/economic-rails
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const rpc=process.env.EVM_RPC_URL;
+          const call=async(method,params)=>{
+            const response=await fetch(rpc,{
+              method:"POST",
+              headers:{"content-type":"application/json"},
+              body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})
+            });
+            if(!response.ok) throw new Error("HTTP "+response.status);
+            const body=await response.json();
+            if(body.error) throw new Error(JSON.stringify(body.error));
+            return body.result;
+          };
+          const finalized=await call("eth_getBlockByNumber",["finalized",false]);
+          if(!finalized?.number) throw new Error("finalized block unavailable");
+          let cursor=BigInt(finalized.number);
+          let block=finalized;
+          let tx=Array.isArray(block.transactions)?block.transactions[0]:null;
+          for(let i=0;!tx&&i<64;i++){
+            cursor-=1n;
+            block=await call("eth_getBlockByNumber",["0x"+cursor.toString(16),false]);
+            tx=Array.isArray(block?.transactions)?block.transactions[0]:null;
+          }
+          if(!tx) throw new Error("no transaction found in finalized search window");
+          const receipt=await call("eth_getTransactionReceipt",[tx]);
+          if(!receipt?.blockNumber) throw new Error("receipt unavailable");
+          if(BigInt(receipt.blockNumber)>BigInt(finalized.number)) throw new Error("receipt above finalized head");
+          const evidence={
+            schema:"aftergraph.real-rail-evidence/v1",
+            rail:"evm",
+            source:"cloudflare-public-json-rpc",
+            rpcHost:new URL(rpc).host,
+            transactionHash:tx,
+            receiptBlockNumber:receipt.blockNumber,
+            finalizedHeadNumber:finalized.number,
+            observation:"CONSENSUS_FINALIZED",
+            externalEffects:0,
+            capturedAt:new Date().toISOString()
+          };
+          writeFileSync("evidence/economic-rails/evm.json",JSON.stringify(evidence,null,2));
+          console.log("EVM_EVIDENCE="+JSON.stringify(evidence));
+          NODE
+
+      - name: Download and verify Canton 3.5.17
+        run: |
+          curl -fL --retry 3 -o /tmp/canton.tar.gz https://github.com/digital-asset/canton/releases/download/v3.5.17/canton-open-source-3.5.17.tar.gz
+          echo "1b178105f429f0bb188fd4ccc22a9a19b79d236b829457cc870416f9277de93d  /tmp/canton.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/canton
+          tar -xzf /tmp/canton.tar.gz -C /tmp/canton --strip-components=1
+
+      - name: Boot Canton sandbox participant
+        run: |
+          nohup /tmp/canton/bin/canton sandbox --json-api-port 7575 >/tmp/canton.log 2>&1 &
+          echo $! >/tmp/canton.pid
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:7575/livez >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -200 /tmp/canton.log
+          exit 1
+
+      - name: Capture Canton participant evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const base="http://127.0.0.1:7575";
+          const versionResponse=await fetch(base+"/v2/version");
+          if(!versionResponse.ok) throw new Error("version HTTP "+versionResponse.status);
+          const version=await versionResponse.json();
+          const ledgerResponse=await fetch(base+"/v2/state/ledger-end");
+          if(!ledgerResponse.ok) throw new Error("ledger-end HTTP "+ledgerResponse.status);
+          const ledgerEnd=await ledgerResponse.json();
+          const evidence={
+            schema:"aftergraph.real-rail-evidence/v1",
+            rail:"canton",
+            source:"canton-sandbox-3.5.17",
+            participantApi:"JSON Ledger API v2",
+            version,
+            ledgerEnd,
+            observation:"PARTICIPANT_LEDGER_OBSERVED",
+            legalFinalityClaimed:false,
+            externalEffects:0,
+            capturedAt:new Date().toISOString()
+          };
+          writeFileSync("evidence/economic-rails/canton.json",JSON.stringify(evidence,null,2));
+          console.log("CANTON_EVIDENCE="+JSON.stringify(evidence));
+          NODE
+
+      - name: Falsify overclaiming
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const evm=JSON.parse(readFileSync("evidence/economic-rails/evm.json","utf8"));
+          const canton=JSON.parse(readFileSync("evidence/economic-rails/canton.json","utf8"));
+          if(evm.externalEffects!==0||canton.externalEffects!==0) throw new Error("external effect claim");
+          if(canton.legalFinalityClaimed!==false) throw new Error("Canton legal-finality overclaim");
+          if(BigInt(evm.receiptBlockNumber)>BigInt(evm.finalizedHeadNumber)) throw new Error("invalid EVM finality evidence");
+          console.log(JSON.stringify({
+            schema:"economic-real-rail-independent-verification/1.0",
+            rails:["evm","canton"],
+            state:"INDEPENDENT_READ_ONLY_EVIDENCE",
+            final:false,
+            promotionAuthority:false
+          }));
+          NODE
+
+      - name: Upload independent real-rail evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: economic-real-rail-independent-evidence
+          path: evidence/economic-rails/
+          if-no-files-found: error
