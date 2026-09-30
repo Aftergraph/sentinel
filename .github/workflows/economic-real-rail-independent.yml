@@ -27,7 +27,7 @@ jobs:
 
       - name: Capture public Ethereum finalized evidence
         env:
-          EVM_RPC_URL: https://cloudflare-eth.com/v1/mainnet
+          EVM_RPC_URL: https://ethereum-rpc.publicnode.com
         run: |
           mkdir -p evidence/economic-rails
           node --input-type=module <<'NODE'
@@ -61,7 +61,7 @@ jobs:
           const evidence={
             schema:"aftergraph.real-rail-evidence/v1",
             rail:"evm",
-            source:"cloudflare-public-json-rpc",
+            source:"publicnode-ethereum-json-rpc",
             rpcHost:new URL(rpc).host,
             transactionHash:tx,
             receiptBlockNumber:receipt.blockNumber,
