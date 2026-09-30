@@ -1,0 +1,42 @@
+[Unit]
+Description=Sentinel GitHub App (PR review webhook receiver)
+Documentation=https://github.com/Aftergraph/sentinel/blob/main/docs/deploy-vds.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sentinel
+Group=sentinel
+WorkingDirectory=/opt/sentinel
+EnvironmentFile=/etc/sentinel/github-app.env
+ExecStart=/usr/bin/node apps/github/app.js
+Restart=on-failure
+RestartSec=5
+
+# Fail-closed boot: app.js exits 1 without GITHUB_WEBHOOK_SECRET and GitHub
+# auth, so a bad env stops the unit instead of serving unauthenticated.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentinel-github-app
+
+# State lives on disk (ledger, memory, install store).
+StateDirectory=sentinel
+ReadWritePaths=/var/lib/sentinel
+
+# Hardening: no new privileges, private tmp, read-only system, no device access.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
