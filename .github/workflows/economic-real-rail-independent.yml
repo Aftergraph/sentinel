@@ -74,6 +74,68 @@ jobs:
           console.log("EVM_EVIDENCE="+JSON.stringify(evidence));
           NODE
 
+      - name: Falsify Ethereum pre-finality and regression boundaries
+        env:
+          EVM_RPC_URL: https://ethereum-rpc.publicnode.com
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const rpc=process.env.EVM_RPC_URL;
+          const call=async(method,params)=>{
+            const response=await fetch(rpc,{
+              method:"POST",
+              headers:{"content-type":"application/json"},
+              body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})
+            });
+            if(!response.ok) throw new Error("HTTP "+response.status);
+            const body=await response.json();
+            if(body.error) throw new Error(JSON.stringify(body.error));
+            return body.result;
+          };
+          const finalizedA=await call("eth_getBlockByNumber",["finalized",false]);
+          const latest=await call("eth_getBlockByNumber",["latest",false]);
+          if(!finalizedA?.number||!latest?.number) throw new Error("missing finalized/latest heads");
+          if(BigInt(latest.number)<=BigInt(finalizedA.number)) throw new Error("no observable pre-finality window");
+
+          let cursor=BigInt(latest.number);
+          const floor=BigInt(finalizedA.number);
+          let nonFinalizedTx=null;
+          let nonFinalizedBlock=null;
+          for(let i=0;i<128 && cursor>floor;i++,cursor-=1n){
+            const block=await call("eth_getBlockByNumber",["0x"+cursor.toString(16),false]);
+            if(Array.isArray(block?.transactions)&&block.transactions.length){
+              nonFinalizedTx=block.transactions[0];
+              nonFinalizedBlock=block.number;
+              break;
+            }
+          }
+          if(!nonFinalizedTx||!nonFinalizedBlock) throw new Error("no transaction found above finalized head");
+          const receipt=await call("eth_getTransactionReceipt",[nonFinalizedTx]);
+          if(!receipt?.blockNumber) throw new Error("non-finalized receipt unavailable");
+          if(BigInt(receipt.blockNumber)<=floor) throw new Error("selected receipt is already finalized");
+
+          await new Promise(r=>setTimeout(r,1500));
+          const finalizedB=await call("eth_getBlockByNumber",["finalized",false]);
+          if(!finalizedB?.number) throw new Error("second finalized head unavailable");
+          if(BigInt(finalizedB.number)<BigInt(finalizedA.number)) throw new Error("finalized head regressed");
+
+          const evidence={
+            schema:"economic-evm-boundary-falsification/1.0",
+            finalizedHeadA:finalizedA.number,
+            finalizedHeadB:finalizedB.number,
+            latestHead:latest.number,
+            nonFinalizedTransactionHash:nonFinalizedTx,
+            nonFinalizedReceiptBlock:receipt.blockNumber,
+            nonFinalizedRejectedAsFinalized:true,
+            finalizedHeadNonRegression:true,
+            final:false,
+            externalEffects:0,
+            capturedAt:new Date().toISOString()
+          };
+          writeFileSync("evidence/economic-rails/evm-boundary.json",JSON.stringify(evidence,null,2));
+          console.log("EVM_BOUNDARY="+JSON.stringify(evidence));
+          NODE
+
       - name: Download and verify Canton 3.5.17
         run: |
           curl -fL --retry 3 -o /tmp/canton.tar.gz https://github.com/digital-asset/canton/releases/download/v3.5.17/canton-open-source-3.5.17.tar.gz
@@ -119,6 +181,82 @@ jobs:
           };
           writeFileSync("evidence/economic-rails/canton.json",JSON.stringify(evidence,null,2));
           console.log("CANTON_EVIDENCE="+JSON.stringify(evidence));
+          NODE
+
+      - name: Falsify Canton ahead-of-ledger offset
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const canton=JSON.parse(readFileSync("evidence/economic-rails/canton.json","utf8"));
+          const ledgerEnd=Number(canton.ledgerEnd?.offset);
+          if(!Number.isInteger(ledgerEnd)||ledgerEnd<0) throw new Error("invalid Canton ledger end");
+          const requestedOffset=ledgerEnd+1;
+          const response=await fetch("http://127.0.0.1:7575/v2/updates/update-by-offset",{
+            method:"POST",
+            headers:{"content-type":"application/json"},
+            body:JSON.stringify({offset:requestedOffset,updateFormat:{}})
+          });
+          const bodyText=await response.text();
+          if(response.ok) throw new Error("ahead-of-ledger offset unexpectedly resolved");
+          if(!/UPDATE_NOT_FOUND|NOT_FOUND|not found/i.test(bodyText)){
+            throw new Error("ahead-of-ledger rejection was not UPDATE_NOT_FOUND: HTTP "+response.status+" "+bodyText.slice(0,500));
+          }
+          const evidence={
+            schema:"economic-canton-boundary-falsification/1.0",
+            ledgerEnd,
+            requestedOffset,
+            httpStatus:response.status,
+            updateNotFound:true,
+            final:false,
+            externalEffects:0,
+            capturedAt:new Date().toISOString()
+          };
+          writeFileSync("evidence/economic-rails/canton-boundary.json",JSON.stringify(evidence,null,2));
+          console.log("CANTON_BOUNDARY="+JSON.stringify(evidence));
+          NODE
+
+      - name: Falsify cross-rail correlation disagreement using captured rails
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          import { reconcileRailObservations } from "./lib/economic-rail-verification.js";
+          const evmEvidence=JSON.parse(readFileSync("evidence/economic-rails/evm.json","utf8"));
+          const cantonEvidence=JSON.parse(readFileSync("evidence/economic-rails/canton.json","utf8"));
+
+          const evm={
+            schema:"aftergraph.rail-observation/v1",
+            rail:"evm",
+            subject:evmEvidence.transactionHash,
+            correlationSubject:"econ-real-a",
+            observedState:"EVM_FINALIZED_HEAD_OBSERVED",
+            finalityClass:"CONSENSUS_FINALIZED",
+            externalEffects:0
+          };
+          const canton={
+            schema:"aftergraph.rail-observation/v1",
+            rail:"canton",
+            subject:String(cantonEvidence.ledgerEnd.offset),
+            correlationSubject:"econ-real-b",
+            observedState:"CANTON_LEDGER_OFFSET_OBSERVED",
+            finalityClass:"PARTICIPANT_LEDGER_OBSERVED",
+            externalEffects:0
+          };
+          const disagreement=reconcileRailObservations([evm,canton]);
+          if(disagreement.state!=="UNCERTAIN"||disagreement.final!==false) throw new Error("cross-rail disagreement did not fail closed");
+
+          const corroborated=reconcileRailObservations([evm,{...canton,correlationSubject:"econ-real-a"}]);
+          if(corroborated.state!=="CORROBORATED_OBSERVATION"||corroborated.final!==false) throw new Error("corroboration semantics invalid");
+
+          const evidence={
+            schema:"economic-cross-rail-falsification/1.0",
+            mismatchedCorrelation:disagreement,
+            syntheticMatchedCorrelation:corroborated,
+            realSettlementCorrelationClaimed:false,
+            promotionAuthority:false,
+            externalEffects:0
+          };
+          writeFileSync("evidence/economic-rails/cross-rail-boundary.json",JSON.stringify(evidence,null,2));
+          console.log("CROSS_RAIL_BOUNDARY="+JSON.stringify(evidence));
           NODE
 
       - name: Falsify overclaiming
