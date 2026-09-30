@@ -10,17 +10,17 @@ on:
       - 'test/domain-works-publisher.test.mjs'
       - 'test/cli-domain-runtime.test.mjs'
       - 'test/model-evidence-verifier.test.mjs'
-      - 'lib/domain-verification.js'
-      - 'lib/domain-works-publisher.js'
-      - 'test/domain-verification.test.mjs'
-      - 'test/domain-works-publisher.test.mjs'
-      - 'test/cli-domain-runtime.test.mjs'
       - 'package.json'
       - '.github/workflows/model-evidence-verifier.yml'
       - 'evidence/model-verification/**'
   pull_request:
     paths:
       - 'lib/model-evidence-verifier.js'
+      - 'lib/domain-verification.js'
+      - 'lib/domain-works-publisher.js'
+      - 'test/domain-verification.test.mjs'
+      - 'test/domain-works-publisher.test.mjs'
+      - 'test/cli-domain-runtime.test.mjs'
       - 'test/model-evidence-verifier.test.mjs'
       - 'package.json'
       - '.github/workflows/model-evidence-verifier.yml'
@@ -29,11 +29,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sentinel-model-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Verify Node runtime
         run: node --version
       - name: Run Sentinel test suite
