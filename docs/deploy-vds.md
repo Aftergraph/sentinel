@@ -1,0 +1,70 @@
+# Deploying the Sentinel GitHub App on a VDS
+
+The review slice is a plain Node 20 process that receives GitHub webhooks and
+owns one verdict card per PR. This page covers the host side. Cloudflare
+ingress is in [cloudflare.md](cloudflare.md); nothing here opens a public port.
+
+## What the operator has to create first
+
+Two things cannot come from this repo, because both are minted inside GitHub
+and are secrets:
+
+1. **A GitHub App registration** (org settings, Developer settings, GitHub
+   Apps). Webhook URL is the tunnel hostname plus `/webhooks/github`, and the
+   webhook secret is a random string you keep. Permissions: pull requests
+   read and write, contents read, checks write when
+   `SENTINEL_GITHUB_CHECKS=1`. Subscribe to the `pull_request` and
+   `installation` events.
+2. **The App private key** (the PEM downloaded once at registration), placed
+   on the host at `/etc/sentinel/github-app.pem` as `root:sentinel`, mode
+   `0640`.
+
+A PAT in `GITHUB_TOKEN` works for a first smoke test, but App credentials win
+when both are present, and only App mode gives the per-installation token the
+card writer expects.
+
+## Install
+
+```bash
+git clone https://github.com/Aftergraph/sentinel.git /srv/sentinel-src
+cd /srv/sentinel-src
+sudo ops/deploy/install.sh
+```
+
+The script creates the `sentinel` system user, copies the runtime slices to
+`/opt/sentinel`, creates `/var/lib/sentinel` for the ledger, memory and
+installation store, seeds `/etc/sentinel/github-app.env` from the example, and
+enables the unit. It refuses to run on Node older than 20 and never
+overwrites an env file that already exists, so re-running it after a
+`git pull` is safe.
+
+## Fill the environment
+
+`/etc/sentinel/github-app.env` needs `GITHUB_WEBHOOK_SECRET` plus either
+`GITHUB_APP_ID` with `GITHUB_APP_KEY_FILE`, or `GITHUB_TOKEN`. The app fails
+closed: a missing secret or missing auth exits 1 and systemd reports the unit
+as failed rather than serving an unauthenticated webhook endpoint.
+
+## Start and verify
+
+```bash
+sudo systemctl start sentinel-github-app
+systemctl status sentinel-github-app
+journalctl -u sentinel-github-app -f
+```
+
+A healthy boot logs `sentinel github-app listening on :8787`. Open a pull
+request against any installed repo and the verdict card appears on it; the
+card is patched in place on later pushes, and a HEAD that moves mid-review
+produces a STALE card instead of a verdict on a superseded commit.
+
+## Upgrading
+
+```bash
+cd /srv/sentinel-src && git pull
+sudo ops/deploy/install.sh
+sudo systemctl restart sentinel-github-app
+```
+
+State in `/var/lib/sentinel` survives the upgrade, so receipts keep chaining
+into the same ledger.
