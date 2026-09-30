@@ -16,7 +16,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Validate readback contract is non-mutating and manual-only
         shell: bash
         run: |
@@ -30,7 +30,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, aftergraph-ci]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           clean: true
