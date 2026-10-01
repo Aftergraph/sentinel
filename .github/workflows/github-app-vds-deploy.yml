@@ -72,7 +72,10 @@ jobs:
           run_root systemctl is-active --quiet sentinel-github-app.service
           test "$(run_root cat /opt/sentinel/.source-revision)" = "${{ inputs.release_sha }}"
 
-          health_code="$(curl -sS --resolve sentinel-loopback.invalid:8788:127.0.0.1 -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 http://sentinel-loopback.invalid:8788/healthz)"
+          port="$(run_root awk -F= '$1=="PORT" {print $2}' /etc/sentinel/github-app.env | tail -n 1 | tr -d '[:space:]')"
+          port="${port:-8787}"
+          [[ "$port" =~ ^[0-9]+$ ]]
+          health_code="$(curl -sS --resolve "sentinel-loopback.invalid:${port}:127.0.0.1" -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 "http://sentinel-loopback.invalid:${port}/healthz")"
           test "$health_code" = "200"
           cat "${{ runner.temp }}/sentinel-health.json"
 
