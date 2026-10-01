@@ -16,7 +16,8 @@
 // mirroring ingestPR. Missing api client (or a client without both methods)
 // throws fail-closed. Every create/update/supersede appends one audit event
 // via ../../lib/audit.js with actor `github-app`.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { append } from '../../lib/audit.js';
@@ -51,13 +52,16 @@ export function defaultChecksPath() {
 
 export function loadChecks(path = defaultChecksPath()) {
   if (!existsSync(path)) return {};
+  let raw;
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw;
-  } catch {
-    return {};
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new Error(`github checks store: corrupt store file (${path}): ${err.message}`);
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`github checks store: corrupt store file (${path}): not an object`);
+  }
+  return raw;
 }
 
 export function saveChecks(store, path = defaultChecksPath()) {
@@ -65,7 +69,9 @@ export function saveChecks(store, path = defaultChecksPath()) {
     throw new Error('saveChecks requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, path);
   return store;
 }
 
