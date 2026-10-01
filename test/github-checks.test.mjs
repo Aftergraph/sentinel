@@ -269,3 +269,20 @@ test('github checks: poll-scoped bypass remains exact-repo bounded', async () =>
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('check summary binds base SHA and receipt id when given', async () => {
+  const { postCheck } = await import('../apps/github/checks.js');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const d = mkdtempSync(join(tmpdir(), 'ck-'));
+  const created = [];
+  const api = { async createCheckRun(b) { created.push(b); return { id: 9 }; }, async updateCheckRun() {} };
+  try {
+    await postCheck({ api, repo: 'Aftergraph/x', prNumber: 1, headSha: 'a'.repeat(40), baseSha: 'c'.repeat(40), receiptId: 'rcpt_abc', verdict: 'SHIP', findings: [] }, { checksPath: join(d, 'c.json'), storePath: join(d, 's.json') });
+    if (created.length) {
+      assert.match(created[0].output.summary, new RegExp('against base ' + 'c'.repeat(40)));
+      assert.match(created[0].output.summary, /Receipt rcpt_abc/);
+    }
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});

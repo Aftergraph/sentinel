@@ -135,14 +135,15 @@ function renderSummary(summary) {
 
 // Output carries the verdict, the EXACT head SHA (never shortened — the
 // check binds to the commit it verified), and the top findings.
-function buildOutput({ verdict, headSha, summary, findings }) {
+function buildOutput({ verdict, headSha, summary, findings, baseSha = null, receiptId = null }) {
   const title = `Sentinel verdict: ${verdict}`;
-  const headLine = `Verdict ${verdict} on exact HEAD ${headSha}.`;
+  const headLine = `Verdict ${verdict} on exact HEAD ${headSha}` + (baseSha && HEX40.test(baseSha) ? ` against base ${baseSha}.` : '.');
+  const receiptLine = receiptId ? `Receipt ${receiptId} (re-check offline with \`sentinel verify --receipt\`).` : '';
   const extra = renderSummary(summary);
   const countLine = findings.length === 0
     ? 'No blocking findings on the verified HEAD.'
     : `${findings.length} blocking finding(s):`;
-  const summaryText = [headLine, extra, countLine].filter(Boolean).join('\n');
+  const summaryText = [headLine, receiptLine, extra, countLine].filter(Boolean).join('\n');
   let text;
   if (findings.length === 0) {
     text = `HEAD ${headSha} verified with no blocking findings.`;
@@ -199,7 +200,7 @@ export async function postCheck(input, opts) {
   const checksPath = resolveChecksPath(opts);
   const store = loadChecks(checksPath);
   const key = checkKey(repo, prNumber, headSha);
-  const output = buildOutput({ verdict, headSha, summary, findings });
+  const output = buildOutput({ verdict, headSha, summary, findings, baseSha: input.baseSha ?? null, receiptId: input.receiptId ?? null });
 
   // Same-headSha redelivery: refresh the existing run in place.
   const prev = store[key] || null;
