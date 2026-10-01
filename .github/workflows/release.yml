@@ -1,0 +1,65 @@
+name: release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/aftergraph/sentinel
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/aftergraph/sentinel
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+  npm:
+    # Runs only once the npm package exists and trusted publishing is configured
+    # for Aftergraph/sentinel (Aftergraph/.github#61). No long-lived token.
+    needs: test
+    if: ${{ vars.NPM_TRUSTED_PUBLISHING == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: 'https://registry.npmjs.org' }
+      - run: npm install -g npm@latest
+      - run: npm publish --provenance --access public
