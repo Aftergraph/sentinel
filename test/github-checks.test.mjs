@@ -233,3 +233,39 @@ test('github checks: unknown repo ignored', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('github checks: poll-scoped installation repo may create review check without webhook store', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-ghchk-'));
+  clear();
+  try {
+    const storePath = join(dir, 'installations.json');
+    const api = makeFakeApi();
+    const out = await postCheck(
+      { api, repo: 'Aftergraph/sentinel', prNumber: 82, headSha: H1, verdict: 'SHIP', findings: [] },
+      { storePath, knownInstallationRepos: ['Aftergraph/sentinel'] },
+    );
+    assert.equal(out.action, 'created');
+    assert.equal(api.calls.creates.length, 1);
+    assert.equal(api.calls.creates[0].name, 'sentinel/review');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('github checks: poll-scoped bypass remains exact-repo bounded', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-ghchk-'));
+  clear();
+  try {
+    const storePath = join(dir, 'installations.json');
+    const api = makeFakeApi();
+    const out = await postCheck(
+      { api, repo: 'Aftergraph/other', prNumber: 9, headSha: H1, verdict: 'SHIP', findings: [] },
+      { storePath, knownInstallationRepos: ['Aftergraph/sentinel'] },
+    );
+    assert.deepEqual(out, { ignored: true });
+    assert.equal(api.calls.creates.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
