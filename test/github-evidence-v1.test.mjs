@@ -81,7 +81,13 @@ test('github evidence: states preserve review/workflow/evidence-pack distinction
   assert.deepEqual(verifyGitHubEvidence(pack, { signingKey: KEY }), { valid: true });
 
   assert.throws(
-    () => makeGitHubEvidence(base({ state: 'VERIFIED_EVIDENCE_PACK', evidencePackId: null }), { signingKey: KEY }),
+    () => makeGitHubEvidence(base({
+      state: 'VERIFIED_EVIDENCE_PACK',
+      workflowEvidence: [
+        { name: 'Economic Evidence Pack', runId: 11, conclusion: 'success', headSha: 'a'.repeat(40) },
+      ],
+      evidencePackId: null,
+    }), { signingKey: KEY }),
     /evidence pack/i,
   );
 });
