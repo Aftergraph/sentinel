@@ -37,7 +37,8 @@ export function requiredEconomicWorkflows(diffText) {
   const economic = paths.some((p) =>
     p.startsWith('lib/economic-') ||
     p.startsWith('test/economic-') ||
-    p.startsWith('.github/workflows/economic-')
+    p.startsWith('.github/workflows/economic-') ||
+    /^docs\/evidence\/economic-campaigns\/[^/]+\/evidence-pack\.json$/.test(p)
   );
   if (!economic) return [];
   const required = new Set(['test']);
