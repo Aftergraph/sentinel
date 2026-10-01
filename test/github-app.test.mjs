@@ -247,7 +247,7 @@ test('github: healthz exposes checks state without auth material', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/healthz`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body, { ok: true, service: 'sentinel-github-app', checksEnabled: true });
+    assert.deepEqual(body, { ok: true, service: 'sentinel-github-app', checksEnabled: true, pollingEnabled: false });
     assert.equal(JSON.stringify(body).includes('token'), false);
     assert.equal(JSON.stringify(body).includes('secret'), false);
   } finally {
