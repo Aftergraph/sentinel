@@ -157,3 +157,38 @@ the file — keep 8788.
 
 `npm test` — 633 passed, 0 failed, 0 skipped, ~7.5s. Zero-dependency Node repo,
 no install step. `bash -n ops/deploy/install.sh` clean. All files LF-only.
+
+## GitHub App registered — 2026-10-01
+
+App `aftergraph-sentinel` exists and the receiver is wired to it:
+
+- App ID `5144112`, slug `aftergraph-sentinel`, client id `Iv23li9vwFXFpt8T3l7p`
+- URL: https://github.com/apps/aftergraph-sentinel
+- PEM installed at `/etc/sentinel/github-app.pem`, `root:sentinel 0640`
+- `GITHUB_APP_ID` / `GITHUB_APP_KEY_FILE` / `GITHUB_WEBHOOK_SECRET` set in
+  `/etc/sentinel/github-app.env`; the secret is the one GitHub issued at
+  conversion, not a locally generated one.
+
+Creation used the app-manifest flow served by
+`relay/tools/ghapp_manifest.py` on the VPS: open `/ghapp`, press
+`Create GitHub App`, GitHub returns a manifest code to `/ghapp/callback`, which
+converts it into app id, slug, PEM and webhook secret. No PAT is required, and
+the private key is written once.
+
+### Verified end to end on loopback
+
+```
+valid HMAC  -> 200 {"ok":true,"handled":true,"action":"created","verdict":"SHIP"}
+forged sig  -> 401 bad signature
+no sig      -> 401
+GET         -> 404
+```
+
+Send a `pull_request` payload with a `pull_request` object; a minimal body
+without it yields 500 from the handler, not from signature verification.
+
+### Still blocking real deliveries
+
+The service listens on `*:8788` and handles signed payloads, but Funnel is not
+public (see above), so GitHub cannot reach it yet. Wire the app to the receiver
+from the tailnet, or fix tailnet Funnel policy, then redeliver.
