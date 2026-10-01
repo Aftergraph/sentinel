@@ -26,6 +26,13 @@ test('economic checks: non-economic diff requires no aggregator',()=>{
   assert.deepEqual(requiredEconomicWorkflows(diff(['README.md'])),[]);
 });
 
+test('economic checks: envelope-only PR is routed through exact-head economic verification',()=>{
+  assert.deepEqual(
+    requiredEconomicWorkflows(diff(['docs/evidence/economic-campaigns/campaign-1/evidence-pack.json'])),
+    ['test']
+  );
+});
+
 test('economic checks: evidence-pack change requires full suite and focused workflow',()=>{
   assert.deepEqual(
     requiredEconomicWorkflows(diff(['lib/economic-evidence-pack.js'])),
@@ -132,4 +139,54 @@ test('economic checks: pending aggregate posts no misleading check',async()=>{
   assert.equal(out.pending,true);
   assert.equal(out.posted,false);
   assert.equal(calls.length,0);
+});
+
+
+test('economic checks: workflow-only success is labeled as workflow verification, not EvidencePack attestation',async()=>{
+  const calls=[];
+  await postEconomicEvidenceCheck({
+    api:{
+      async createCheckRun(params){calls.push(params);return {id:101};},
+      async updateCheckRun(){throw new Error('unexpected');},
+    },
+    repo:'Aftergraph/sentinel',prNumber:100,headSha:H,
+    aggregate:{ready:true,success:true,failed:false,rows:[{name:'test',state:'completed',conclusion:'success',runId:1}]},
+    opts:{economicChecksPath:join(mkdtempSync(join(tmpdir(),'sentinel-economic-tier-')),'checks.json')}
+  });
+  assert.equal(calls[0].conclusion,'success');
+  assert.equal(calls[0].output.title,'Economic verifier workflows: PASS');
+  assert.match(calls[0].output.summary,/No EvidencePack attestation/);
+});
+
+test('economic checks: invalid exact-head envelope blocks the App-owned check',async()=>{
+  const calls=[];
+  await postEconomicEvidenceCheck({
+    api:{
+      async createCheckRun(params){calls.push(params);return {id:102};},
+      async updateCheckRun(){throw new Error('unexpected');},
+    },
+    repo:'Aftergraph/sentinel',prNumber:101,headSha:H,
+    aggregate:{ready:true,success:true,failed:false,rows:[{name:'test',state:'completed',conclusion:'success',runId:1}]},
+    evidenceVerification:{valid:false,state:'EVIDENCE_ENVELOPE_INVALID',path:'docs/evidence/economic-campaigns/c1/evidence-pack.json',reasons:['head_sha_binding']},
+    opts:{economicChecksPath:join(mkdtempSync(join(tmpdir(),'sentinel-economic-tier-')),'checks.json')}
+  });
+  assert.equal(calls[0].conclusion,'failure');
+  assert.equal(calls[0].output.title,'Economic evidence: BLOCKED');
+  assert.match(calls[0].output.text,/head_sha_binding/);
+});
+
+test('economic checks: independently verified envelope upgrades check to VERIFIED_EVIDENCE_PACK',async()=>{
+  const calls=[];
+  await postEconomicEvidenceCheck({
+    api:{
+      async createCheckRun(params){calls.push(params);return {id:103};},
+      async updateCheckRun(){throw new Error('unexpected');},
+    },
+    repo:'Aftergraph/sentinel',prNumber:102,headSha:H,
+    aggregate:{ready:true,success:true,failed:false,rows:[{name:'test',state:'completed',conclusion:'success',runId:1}]},
+    evidenceVerification:{valid:true,state:'VERIFIED_EVIDENCE_PACK',path:'docs/evidence/economic-campaigns/c1/evidence-pack.json',reasons:[]},
+    opts:{economicChecksPath:join(mkdtempSync(join(tmpdir(),'sentinel-economic-tier-')),'checks.json')}
+  });
+  assert.equal(calls[0].conclusion,'success');
+  assert.equal(calls[0].output.title,'Economic evidence: VERIFIED_EVIDENCE_PACK');
 });
