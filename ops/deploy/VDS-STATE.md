@@ -92,6 +92,41 @@ non-interactively. `cloudflared tunnel list` fails with
 The webhook also needs a public URL before a GitHub App can be pointed at it.
 Until a tunnel exists, GitHub has nowhere to deliver events.
 
+**Tailscale Funnel is configured but NOT publicly reachable.** Verified on
+2026-10-01, so do not trust `tailscale funnel status` alone:
+
+```bash
+ssh vds 'tailscale funnel status'      # prints "Funnel on"  <-- misleading
+ssh vds 'tailscale debug prefs'        # AdvertiseServices: None  <-- the truth
+```
+
+All four handlers are configured and correct — `/` -> 7850, `/worksapi` -> 18191,
+`/webhooks/github` -> 8788, `/api/platforms/google_chat/events` -> 8642 — and the
+node holds a valid public certificate for `vmi3517816.tail59667c.ts.net`. But
+the node never advertises the funnel service to the control plane, so the
+endpoint stays tailnet-only.
+
+The decisive test is always an **external** probe, never a tailnet-internal one:
+
+```bash
+curl -s "https://r.jina.ai/https://vmi3517816.tail59667c.ts.net/webhooks/github"
+# ERR_CONNECTION_CLOSED  ->  not public
+```
+
+Two independent external fetchers (`api.allorigins.win`, `r.jina.ai`) both fail
+this way today. A tailnet-internal `curl` to the same URL returns 200 and proves
+nothing — the workstation is inside `tail59667c`.
+
+`tailscale funnel reset`, re-applying every handler, and restarting `tailscaled`
+all leave `AdvertiseServices: None`. The binary does support Funnel, so the
+remaining suspects are tailnet admin policy or the control plane refusing the
+advertisement; neither is fixable from this host.
+
+**Consequence:** a GitHub App must not be created against this URL yet. App
+creation is one-shot and the private key downloads exactly once, so registering
+against an unreachable endpoint burns the credential on a permanently dead
+webhook. Fix exposure first, verify externally, then register.
+
 ## Bring-up order once the key exists
 
 1. `scp github-app.pem vds:/tmp/` then
