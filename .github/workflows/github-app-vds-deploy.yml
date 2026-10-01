@@ -59,7 +59,7 @@ jobs:
           }
           run_root ops/deploy/install.sh
           printf '%s\n' "${{ inputs.release_sha }}" > "${{ runner.temp }}/sentinel-source-revision"
-          run_root install -o root -g sentinel -m 0440 "${{ runner.temp }}/sentinel-source-revision" /opt/sentinel/.source-revision
+          run_root install -o root -g root -m 0444 "${{ runner.temp }}/sentinel-source-revision" /opt/sentinel/.source-revision
 
       - name: Restart and verify runtime
         shell: bash
