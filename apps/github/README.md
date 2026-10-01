@@ -24,6 +24,16 @@ Fail-closed boot: missing secret or token exits 1.
 - Receipts chain into the same ledger as the CLI; delta sections appear
   once a prior receipt for the repo+PR exists.
 
+## PR commands
+
+Write-level humans (OWNER, MEMBER, COLLABORATOR) can drive Sentinel from a PR comment:
+
+- `@sentinel review`: re-review the exact current HEAD, refresh the verdict card and `sentinel/review` check.
+- `@sentinel why <rule-id>`: explain a rule and its severity.
+- `@sentinel help`: list commands.
+
+Bots (Sentinel included) and outside contributors are ignored, so replies never loop. The `sentinel/review` check summary binds verdict, exact HEAD, base SHA and receipt id.
+
 ## Cloudflare
 
 Tunnel-first (stateful: ledger disk, `gh`-network, memory file) — see
@@ -44,6 +54,7 @@ Repository permissions:
 Subscribe to:
 
 - `pull_request`
+- `issue_comment` (PR commands)
 - `workflow_run`
 - `installation`
 - `installation_repositories`

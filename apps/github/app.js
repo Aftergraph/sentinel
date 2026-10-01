@@ -20,6 +20,7 @@ import {
   verifyEconomicEvidenceEnvelope,
 } from './economic-evidence.js';
 import { startGitHubInstallationPoller } from './poller.js';
+import { parseCommand, authorize, helpText, whyText, unknownText } from './commands.js';
 
 // Production `gh api` transport for check runs (additive, opt-in).
 // Returns the injected checksApi when present; otherwise builds a per-event
@@ -142,6 +143,32 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
     };
   }
 
+  if (event === 'issue_comment') {
+    if (payload.action !== 'created') return { handled: false, action: `ignored:issue_comment:${payload.action || 'unknown'}` };
+    if (!payload.issue || !payload.issue.pull_request) return { handled: false, action: 'ignored:issue_comment:not-pr' };
+    const parsed = parseCommand(payload.comment && payload.comment.body);
+    if (!parsed) return { handled: false, action: 'ignored:issue_comment:no-command' };
+    const auth = authorize(payload);
+    if (!auth.ok) return { handled: false, action: `ignored:issue_comment:${auth.reason}` };
+    const repo = payload.repository.full_name;
+    const pr = payload.issue.number;
+    if (parsed.cmd === 'review') {
+      const out = await routeEvent({
+        event: 'pull_request',
+        payload: { action: 'synchronize', repository: payload.repository, pull_request: { number: pr } },
+        platform,
+        opts,
+      });
+      return { ...out, command: 'review', requestedBy: auth.login };
+    }
+    const pack = opts.rulePack || RULE_PACK_VERSION;
+    const body = parsed.cmd === 'why' ? whyText(parsed.args[0], pack)
+      : parsed.cmd === 'help' ? helpText()
+      : unknownText(parsed.verb);
+    await platform.postComment(repo, pr, body);
+    return { handled: true, action: `command:${parsed.cmd}`, command: parsed.cmd, requestedBy: auth.login };
+  }
+
   if (event !== 'pull_request') return { handled: false, action: `ignored:${event}` };
   if (!['opened', 'synchronize', 'reopened'].includes(payload.action)) {
     return { handled: false, action: `ignored:action:${payload.action}` };
@@ -239,6 +266,8 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
       repo,
       prNumber: pr,
       headSha,
+      baseSha: baseShaStart,
+      receiptId: receipt.receipt_id,
       verdict,
       summary,
       findings: fresh.fresh ? result.blocking : [],
