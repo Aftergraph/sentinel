@@ -121,19 +121,37 @@ function key(repo, prNumber, headSha) {
   return repo + '#' + String(prNumber) + '#' + headSha;
 }
 
-function outputFor(headSha, aggregate) {
+function outputFor(headSha, aggregate, evidenceVerification = null) {
   const lines = aggregate.rows.map((row) =>
     '- ' + row.name + ': ' + (row.conclusion ?? row.state) + (row.runId ? ' (run ' + row.runId + ')' : '')
   );
-  const title = aggregate.success ? 'Economic evidence: VERIFIED' : 'Economic evidence: BLOCKED';
-  const summary = aggregate.success
-    ? 'All required economic verifier workflows passed on exact HEAD ' + headSha + '.'
-    : 'One or more required economic verifier workflows failed on exact HEAD ' + headSha + '.';
+  if (evidenceVerification) {
+    lines.push('- Evidence envelope: ' + evidenceVerification.state);
+    if (evidenceVerification.path) lines.push('- Evidence path: ' + evidenceVerification.path);
+    for (const reason of evidenceVerification.reasons || []) lines.push('- Evidence reason: ' + reason);
+  }
+
+  const evidenceInvalid = evidenceVerification && !evidenceVerification.valid;
+  const verifiedPack = aggregate.success && evidenceVerification?.valid === true;
+  const workflowsOnly = aggregate.success && !evidenceVerification;
+
+  const title = verifiedPack
+    ? 'Economic evidence: VERIFIED_EVIDENCE_PACK'
+    : workflowsOnly
+      ? 'Economic verifier workflows: PASS'
+      : 'Economic evidence: BLOCKED';
+  const summary = verifiedPack
+    ? 'Exact-HEAD workflows passed and Sentinel independently verified the repository/head-bound EvidencePack.'
+    : workflowsOnly
+      ? 'All required economic verifier workflows passed on exact HEAD. No EvidencePack attestation was present in this PR.'
+      : evidenceInvalid
+        ? 'Verifier workflows passed, but the exact-HEAD EvidencePack envelope failed Sentinel verification.'
+        : 'One or more required economic verifier workflows failed on exact HEAD ' + headSha + '.';
   return { title, summary, text: lines.join('\n') + '\n\nExact HEAD: ' + headSha };
 }
 
 export async function postEconomicEvidenceCheck({
-  api, repo, prNumber, headSha, aggregate, opts = {},
+  api, repo, prNumber, headSha, aggregate, evidenceVerification = null, opts = {},
 }) {
   if (!api || typeof api.createCheckRun !== 'function' || typeof api.updateCheckRun !== 'function') {
     throw new Error('economic evidence check requires check-run api (fail closed)');
@@ -150,8 +168,8 @@ export async function postEconomicEvidenceCheck({
     name: ECONOMIC_CHECK_NAME,
     head_sha: headSha,
     status: 'completed',
-    conclusion: aggregate.success ? 'success' : 'failure',
-    output: outputFor(headSha, aggregate),
+    conclusion: aggregate.success && (!evidenceVerification || evidenceVerification.valid) ? 'success' : 'failure',
+    output: outputFor(headSha, aggregate, evidenceVerification),
   };
 
   let id = store[k]?.id;
@@ -169,6 +187,7 @@ export async function postEconomicEvidenceCheck({
   store[k] = {
     id,
     conclusion: params.conclusion,
+    evidenceState: evidenceVerification?.state ?? 'WORKFLOWS_VERIFIED',
     headSha,
     updatedAt: new Date().toISOString(),
   };
