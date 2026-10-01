@@ -64,7 +64,7 @@ jobs:
           sudo -n systemctl is-active --quiet sentinel-github-app.service
           test "$(cat /opt/sentinel/.source-revision)" = "${{ inputs.release_sha }}"
 
-          health_code="$(curl -sS -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 http://127.0.0.1:8788/healthz)"
+          health_code="$(curl -sS --resolve sentinel-loopback.invalid:8788:127.0.0.1 -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 http://sentinel-loopback.invalid:8788/healthz)"
           test "$health_code" = "200"
           cat "${{ runner.temp }}/sentinel-health.json"
 
