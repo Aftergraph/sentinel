@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, linux, x64, aftergraph-ci]
+    runs-on: [self-hosted, Linux, X64, vds]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -38,9 +38,10 @@ jobs:
           actual="$(git rev-parse HEAD)"
           test "$actual" = "${{ inputs.release_sha }}"
           test "$(hostname -s)" = "vmi3517816"
-          test "$(id -un)" = "agci"
-          test "$(id -u)" -ne 0
-          sudo -n true
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          }
+          run_root true
 
       - name: Verify Sentinel before deployment
         shell: bash
@@ -52,16 +53,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n ops/deploy/install.sh
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          }
+          run_root ops/deploy/install.sh
           printf '%s\n' "${{ inputs.release_sha }}" > "${{ runner.temp }}/sentinel-source-revision"
-          sudo -n install -o root -g sentinel -m 0440 "${{ runner.temp }}/sentinel-source-revision" /opt/sentinel/.source-revision
+          run_root install -o root -g sentinel -m 0440 "${{ runner.temp }}/sentinel-source-revision" /opt/sentinel/.source-revision
 
       - name: Restart and verify runtime
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n systemctl restart sentinel-github-app.service
-          sudo -n systemctl is-active --quiet sentinel-github-app.service
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          }
+          run_root systemctl restart sentinel-github-app.service
+          run_root systemctl is-active --quiet sentinel-github-app.service
           test "$(cat /opt/sentinel/.source-revision)" = "${{ inputs.release_sha }}"
 
           health_code="$(curl -sS --resolve sentinel-loopback.invalid:8788:127.0.0.1 -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 http://sentinel-loopback.invalid:8788/healthz)"
