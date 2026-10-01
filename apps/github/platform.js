@@ -94,6 +94,13 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
       const data = await req(`/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=100`);
       return Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
     },
+    getFileContent: async (repo, path, ref) => {
+      const data = await req(`/repos/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`);
+      if (!data || data.type !== 'file' || data.encoding !== 'base64' || typeof data.content !== 'string') {
+        throw new Error('GitHub contents response is not a base64 file (fail closed)');
+      }
+      return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8');
+    },
     createCheckRun: (params = {}) => {
       const repo = params.repo;
       if (!repo) throw new Error('createCheckRun requires repo');
