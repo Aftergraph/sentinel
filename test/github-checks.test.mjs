@@ -68,6 +68,7 @@ test('github checks: create-on-first-verdict shape', async () => {
     assert.equal(created.head_sha, H1);
     assert.equal(created.status, 'completed');
     assert.equal(created.conclusion, 'success');
+    assert.equal(created.external_id, `sentinel/review:octo/hello#7#${H1}`);
     // Output carries the verdict, the EXACT head, and the top findings.
     assert.ok(created.output.title.includes('SHIP'));
     assert.ok(created.output.summary.includes('SHIP'));
