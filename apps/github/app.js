@@ -1,6 +1,6 @@
-// Sentinel GitHub App slice (S1): webhook → review → verdict card.
+// Sentinel GitHub App slice (S1): webhook â†’ review â†’ verdict card.
 // Owns exactly one top-level comment per PR (update-in-place). Writes to
-// GitHub are limited to that card — no merges, no approvals, no pushes.
+// GitHub are limited to that card â€” no merges, no approvals, no pushes.
 // lib/ issues every verdict; this file only transports them.
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -8,6 +8,7 @@ import { verifySignature } from './verify.js';
 import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
+import { createDeliveryStore, defaultDeliveryStorePath } from './delivery-store.js';
 import { postCheck } from './checks.js';
 import { createGhClient } from './gh-client.js';
 import {
@@ -38,6 +39,22 @@ export function checksApiFromOpts(opts = {}, repo, platform = null) {
 }
 
 export { selectRepo, ingestPR, captureHead, postCheck };
+
+function webhookDeliveryProvenance(event, payload, deliveryId) {
+  const installationId = payload?.installation?.id ?? null;
+  const repository = payload?.repository?.full_name ?? null;
+  let headSha = null;
+  if (event === 'pull_request') headSha = payload?.pull_request?.head?.sha ?? null;
+  if (event === 'workflow_run') headSha = payload?.workflow_run?.head_sha ?? null;
+  return {
+    deliveryId,
+    event,
+    action: payload?.action || '',
+    installationId,
+    repository,
+    headSha,
+  };
+}
 import {
   analyzeDiff, checkFreshness, computeDelta, loadConfig, environmentInfo,
 } from '../../lib/review.js';
@@ -228,7 +245,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
   }
   // Additive check-runs transport: only when a client is injected (existing
   // callers without one see the exact prior return shape). Fail-closed like
-  // the rest of the slice — a checks error propagates to the 500 path.
+  // the rest of the slice â€” a checks error propagates to the 500 path.
   const checksApi = checksApiFromOpts(opts, repo, platform);
   if (!checksApi) {
     return { handled: true, action, verdict, receipt: receipt.receipt_id };
@@ -263,9 +280,9 @@ function readBody(req) {
 }
 
 // Recently-seen GitHub delivery ids (bounded LRU-ish: redelivered webhooks
-// must not create duplicate ledger lines/audit events — the product contract
+// must not create duplicate ledger lines/audit events â€” the product contract
 // requires idempotent delivery. Best-effort per process; restarts lose it,
-// but content-level idempotence (same head → same record/run) still holds).
+// but content-level idempotence (same head â†’ same record/run) still holds).
 const seenDeliveries = new Map();
 const MAX_SEEN_DELIVERIES = 1000;
 function noteDelivery(id) {
@@ -278,7 +295,10 @@ function noteDelivery(id) {
   return true;
 }
 
-export function createHandler({ platform, secret, opts }) {
+export function createHandler({ platform, secret, opts = {} }) {
+  const deliveryStore = opts.deliveryStorePath
+    ? createDeliveryStore({ path: opts.deliveryStorePath })
+    : null;
   return async (req, res) => {
     const json = (code, obj) => {
       res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
@@ -293,10 +313,25 @@ export function createHandler({ platform, secret, opts }) {
       }
       const event = req.headers['x-github-event'];
       const delivery = req.headers['x-github-delivery'];
-      if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
+      const payload = JSON.parse(raw.toString('utf8'));
+
+      if (deliveryStore) {
+        if (typeof delivery !== 'string' || delivery.length === 0) {
+          throw new Error('missing x-github-delivery (fail closed)');
+        }
+        const claim = deliveryStore.claim(webhookDeliveryProvenance(event, payload, delivery));
+        if (claim.duplicate) {
+          return json(200, {
+            ok: true,
+            deduped: true,
+            action: 'duplicate-delivery',
+            delivery: claim.provenance.deliveryId,
+          });
+        }
+      } else if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
         return json(200, { ok: true, deduped: true, action: 'duplicate-delivery' });
       }
-      const payload = JSON.parse(raw.toString('utf8'));
+
       const out = await routeEvent({ event, payload, platform, opts });
       return json(200, { ok: true, ...out });
     } catch (err) {
@@ -356,6 +391,7 @@ async function main() {
       pollingEnabled: process.env.SENTINEL_GITHUB_POLL === '1',
       pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
       pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
+      deliveryStorePath: process.env.SENTINEL_GITHUB_DELIVERY_STORE || defaultDeliveryStorePath(),
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);
