@@ -192,3 +192,38 @@ without it yields 500 from the handler, not from signature verification.
 The service listens on `*:8788` and handles signed payloads, but Funnel is not
 public (see above), so GitHub cannot reach it yet. Wire the app to the receiver
 from the tailnet, or fix tailnet Funnel policy, then redeliver.
+
+## Fo root-setup.sh (7cf1168) — executed 2026-10-01, config restored
+
+`tools/root-setup.sh` from `frontier/eg-probe` was reviewed before running.
+Its PEM install is a no-op, but it **overwrites `/etc/sentinel/github-app.env`**
+with four `SENTINEL_GITHUB_*` lines. The deployed `apps/github/app.js` reads
+`GITHUB_APP_ID`, `GITHUB_APP_KEY_FILE`, `GITHUB_WEBHOOK_SECRET` and `PORT`; it
+never reads `SENTINEL_GITHUB_APP_ID`. Running it therefore dropped all four
+required keys and stopped the receiver.
+
+Restored from `github-app.env.working` and re-verified: service `active`, signed
+PR delivery 200 `SHIP` with a receipt hash. The script is safe only if the env
+it writes uses the variable names `app.js` actually reads.
+
+### Gateway 401 confirmed — none of the three fixes is local
+
+`aftergraph-relay-eg-mcp-fo.service` answers `{"error":"invalid_token"}` to every
+request because it is an OAuth protected resource with
+`AFTERGRAPH_MCP_ISSUER_URL=https://aftergraph.org`, and that host serves no
+metadata:
+
+```
+/.well-known/oauth-authorization-server   404
+/.well-known/openid-configuration         404
+/.well-known/oauth-protected-resource     404
+```
+
+The relay on `127.0.0.1:7847` returns the same 404s, so there is no issuer to
+point at. `relay-mcp` honours only `AFTERGRAPH_MCP_HOST`, `_PORT`, `_PUBLIC_URL`,
+`_ISSUER_URL` and `AFTERGRAPH_RELAY_URL` — a static bearer would need a code
+change.
+
+So: (a) publish OAuth metadata on aftergraph.org, (b) stand up an issuer, or
+(c) teach `relay-mcp` a static bearer. All three are human decisions; none was
+applied here.
