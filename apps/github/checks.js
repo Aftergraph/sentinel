@@ -88,6 +88,9 @@ function resolveInstallPath(opts) {
 }
 
 function isRepoKnown(repo, opts) {
+  if (opts && typeof opts === 'object' && Array.isArray(opts.knownInstallationRepos)) {
+    if (opts.knownInstallationRepos.includes(repo)) return true;
+  }
   const installPath = resolveInstallPath(opts);
   const store = installPath === undefined ? loadInstallStore() : loadInstallStore(installPath);
   return Object.values(store).some(
