@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
@@ -312,6 +312,7 @@ test('github webhook: durable delivery store dedupes across handler restart', as
     });
     assert.equal(first.status, 200);
     assert.equal(first.json.action, 'pong');
+    assert.equal(existsSync(deliveryStorePath), true, 'first handler must persist delivery claim');
 
     const secondHandler = createHandler({ platform: untouchedPlatform(counter), secret: SECRET, opts });
     let second;
