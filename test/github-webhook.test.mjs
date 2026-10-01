@@ -334,3 +334,40 @@ test('github webhook: durable delivery store dedupes across handler restart', as
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('github webhook: readiness requires durable delivery path', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-ready-'));
+  try {
+    const counter = { calls: 0 };
+    const noDurable = createHandler({
+      platform: untouchedPlatform(counter),
+      secret: SECRET,
+      opts: tmpOpts(dir),
+    });
+    await withServer(noDurable, async (base) => {
+      const res = await fetch(`${base}/readyz`);
+      assert.equal(res.status, 503);
+      const body = await res.json();
+      assert.equal(body.ready, false);
+      assert.equal(body.deliveryStore, 'missing');
+    });
+
+    const durable = createHandler({
+      platform: untouchedPlatform(counter),
+      secret: SECRET,
+      opts: { ...tmpOpts(dir), deliveryStorePath: join(dir, 'deliveries.json') },
+    });
+    await withServer(durable, async (base) => {
+      const res = await fetch(`${base}/readyz`);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.ready, true);
+      assert.equal(body.deliveryStore, 'durable');
+      assert.equal(body.contract, 'github-app-contract/1.0');
+    });
+    assert.equal(counter.calls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
