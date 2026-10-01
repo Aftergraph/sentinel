@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -36,6 +36,16 @@ function save(path, doc) {
   renameSync(tmp, path);
 }
 
+function traceForDelivery(deliveryId, event, action) {
+  const traceId = createHash('sha256').update(`trace\0${deliveryId}`).digest('hex').slice(0, 32);
+  const spanId = createHash('sha256').update(`span\0${deliveryId}\0${event}\0${action || ''}`).digest('hex').slice(0, 16);
+  return Object.freeze({
+    traceId,
+    spanId,
+    traceparent: `00-${traceId}-${spanId}-01`,
+  });
+}
+
 function canonical(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('delivery provenance requires an object');
@@ -63,6 +73,7 @@ function canonical(input) {
   if (headSha !== null && !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(headSha)) {
     throw new Error('delivery provenance headSha must be immutable Git SHA');
   }
+  const trace = traceForDelivery(deliveryId, event, action || '');
   return Object.freeze({
     deliveryId,
     event,
@@ -70,6 +81,7 @@ function canonical(input) {
     installationId: installationId ?? null,
     repository: repository ?? null,
     headSha,
+    ...trace,
   });
 }
 
