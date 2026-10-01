@@ -9,6 +9,8 @@
 //     exchange it for an installation token
 //     (POST /app/installations/{id}/access_tokens) used for all calls.
 import { createPrivateKey, sign } from 'node:crypto';
+import { GITHUB_APP_CONTRACT } from './contract.js';
+import { createCredentialIssuer } from './credentials.js';
 
 const API = 'https://api.github.com';
 
@@ -50,34 +52,56 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
     return ct.includes('application/json') ? res.json() : res.text();
   }
 
-  // Short-lived installation token cache (refreshed 60s before expiry).
-  let cached = null;
-  async function installationToken() {
-    if (cached && Date.now() < cached.expiresAtMs - 60_000) return cached.token;
+  // Short-lived installation tokens are cached per repository and refreshed
+  // 60s before expiry. Tokens are narrowed to exactly one repository plus the
+  // machine-readable Sentinel permission contract.
+  const tokenCache = new Map();
+  let discoveredInstallationId = installationId || null;
+
+  function repoNameFromPath(path) {
+    const m = /^\/repos\/[^/]+\/([^/?]+)/.exec(path);
+    if (!m) throw new Error(`GitHub App request is not repository-scoped: ${path} (fail closed)`);
+    return decodeURIComponent(m[1]);
+  }
+
+  async function resolvedInstallationId() {
+    if (discoveredInstallationId) return discoveredInstallationId;
     const jwt = createAppJwt({ appId, privateKeyPem });
-    let id = installationId;
-    if (!id) {
-      const installs = await rawReq('/app/installations', { auth: `Bearer ${jwt}` });
-      if (!Array.isArray(installs) || installs.length === 0 || installs[0] == null || installs[0].id == null) {
-        throw new Error('GitHub App auth failed: no installations found for this App');
-      }
-      id = installs[0].id;
+    const installs = await rawReq('/app/installations', { auth: `Bearer ${jwt}` });
+    if (!Array.isArray(installs) || installs.length === 0 || installs[0] == null || installs[0].id == null) {
+      throw new Error('GitHub App auth failed: no installations found for this App');
     }
-    const issued = await rawReq(`/app/installations/${id}/access_tokens`, {
-      method: 'POST',
-      auth: `Bearer ${jwt}`,
+    discoveredInstallationId = installs[0].id;
+    return discoveredInstallationId;
+  }
+
+  async function installationToken(repoName) {
+    const cached = tokenCache.get(repoName);
+    if (cached && Date.now() < cached.expiresAtMs - 60_000) return cached.token;
+    const id = await resolvedInstallationId();
+    const issuer = createCredentialIssuer({
+      appId,
+      privateKeyPem,
+      fetchImpl: fetchFn,
+      jwtFactory: createAppJwt,
+      apiBase: API,
     });
-    if (!issued || !issued.token) throw new Error('GitHub App auth failed: access_tokens returned no token');
-    cached = {
+    const issued = await issuer.issue({
+      installationId: id,
+      repositories: [repoName],
+      permissions: GITHUB_APP_CONTRACT.permissions,
+    });
+    tokenCache.set(repoName, {
       token: issued.token,
-      expiresAtMs: issued.expires_at ? Date.parse(issued.expires_at) : Date.now() + 50 * 60_000,
-    };
-    return cached.token;
+      fingerprint: issued.fingerprint,
+      expiresAtMs: issued.expiresAt ? Date.parse(issued.expiresAt) : Date.now() + 50 * 60_000,
+    });
+    return issued.token;
   }
 
   async function req(path, opts = {}) {
     if (appMode) {
-      const itoken = await installationToken();
+      const itoken = await installationToken(repoNameFromPath(path));
       return rawReq(path, { ...opts, auth: `Bearer ${itoken}` });
     }
     if (!token) throw new Error('createPlatform requires { token } or { appId, privateKeyPem }');
