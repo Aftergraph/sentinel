@@ -1,0 +1,34 @@
+name: Labs Preflight Independent Verification
+
+on:
+  pull_request:
+    paths:
+      - "lib/labs-preflight-verifier.js"
+      - "scripts/verify-labs-preflight.mjs"
+      - "test/labs-preflight-verifier.test.mjs"
+      - ".github/workflows/labs-preflight-verifier.yml"
+      - "package.json"
+  push:
+    branches: [main]
+    paths:
+      - "lib/labs-preflight-verifier.js"
+      - "scripts/verify-labs-preflight.mjs"
+      - "test/labs-preflight-verifier.test.mjs"
+      - ".github/workflows/labs-preflight-verifier.yml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Run independent Labs preflight verifier tests
+        run: node --test test/labs-preflight-verifier.test.mjs
