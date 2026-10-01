@@ -273,3 +273,63 @@ test('github webhook: oversize body is never processed and the server stays up',
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('github webhook: durable delivery store dedupes across handler restart', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-ghwh-v2-'));
+  clear();
+  const deliveryStorePath = join(dir, 'deliveries.json');
+  const body = JSON.stringify({ zen: 'keep it simple' });
+  const delivery = 'delivery-restart-1';
+
+  async function sendWith(handler) {
+    await withServer(handler, async (base) => {
+      const headers = {
+        'content-type': 'application/json',
+        'x-hub-signature-256': sign(Buffer.from(body)),
+        'x-github-event': 'ping',
+        'x-github-delivery': delivery,
+      };
+      const res = await fetch(`${base}/webhooks/github`, { method: 'POST', headers, body });
+      return { status: res.status, json: await res.json() };
+    });
+  }
+
+  try {
+    const counter = { calls: 0 };
+    const opts = { ...tmpOpts(dir), deliveryStorePath };
+    const firstHandler = createHandler({ platform: untouchedPlatform(counter), secret: SECRET, opts });
+    let first;
+    await withServer(firstHandler, async (base) => {
+      const headers = {
+        'content-type': 'application/json',
+        'x-hub-signature-256': sign(Buffer.from(body)),
+        'x-github-event': 'ping',
+        'x-github-delivery': delivery,
+      };
+      const res = await fetch(`${base}/webhooks/github`, { method: 'POST', headers, body });
+      first = { status: res.status, json: await res.json() };
+    });
+    assert.equal(first.status, 200);
+    assert.equal(first.json.action, 'pong');
+
+    const secondHandler = createHandler({ platform: untouchedPlatform(counter), secret: SECRET, opts });
+    let second;
+    await withServer(secondHandler, async (base) => {
+      const headers = {
+        'content-type': 'application/json',
+        'x-hub-signature-256': sign(Buffer.from(body)),
+        'x-github-event': 'ping',
+        'x-github-delivery': delivery,
+      };
+      const res = await fetch(`${base}/webhooks/github`, { method: 'POST', headers, body });
+      second = { status: res.status, json: await res.json() };
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.json.deduped, true);
+    assert.equal(second.json.action, 'duplicate-delivery');
+    assert.equal(counter.calls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
