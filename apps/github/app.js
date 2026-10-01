@@ -8,6 +8,7 @@ import { verifySignature } from './verify.js';
 import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
+import { createDeliveryStore, defaultDeliveryStorePath } from './delivery-store.js';
 import { postCheck } from './checks.js';
 import { createGhClient } from './gh-client.js';
 import {
@@ -37,6 +38,22 @@ export function checksApiFromOpts(opts = {}, repo, platform = null) {
 }
 
 export { selectRepo, ingestPR, captureHead, postCheck };
+
+function webhookDeliveryProvenance(event, payload, deliveryId) {
+  const installationId = payload?.installation?.id ?? null;
+  const repository = payload?.repository?.full_name ?? null;
+  let headSha = null;
+  if (event === 'pull_request') headSha = payload?.pull_request?.head?.sha ?? null;
+  if (event === 'workflow_run') headSha = payload?.workflow_run?.head_sha ?? null;
+  return {
+    deliveryId,
+    event,
+    action: payload?.action || '',
+    installationId,
+    repository,
+    headSha,
+  };
+}
 import {
   analyzeDiff, checkFreshness, computeDelta, loadConfig, environmentInfo,
 } from '../../lib/review.js';
@@ -276,7 +293,10 @@ function noteDelivery(id) {
   return true;
 }
 
-export function createHandler({ platform, secret, opts }) {
+export function createHandler({ platform, secret, opts = {} }) {
+  const deliveryStore = opts.deliveryStorePath
+    ? createDeliveryStore({ path: opts.deliveryStorePath })
+    : null;
   return async (req, res) => {
     const json = (code, obj) => {
       res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
@@ -291,10 +311,25 @@ export function createHandler({ platform, secret, opts }) {
       }
       const event = req.headers['x-github-event'];
       const delivery = req.headers['x-github-delivery'];
-      if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
+      const payload = JSON.parse(raw.toString('utf8'));
+
+      if (deliveryStore) {
+        if (typeof delivery !== 'string' || delivery.length === 0) {
+          throw new Error('missing x-github-delivery (fail closed)');
+        }
+        const claim = deliveryStore.claim(webhookDeliveryProvenance(event, payload, delivery));
+        if (claim.duplicate) {
+          return json(200, {
+            ok: true,
+            deduped: true,
+            action: 'duplicate-delivery',
+            delivery: claim.provenance.deliveryId,
+          });
+        }
+      } else if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
         return json(200, { ok: true, deduped: true, action: 'duplicate-delivery' });
       }
-      const payload = JSON.parse(raw.toString('utf8'));
+
       const out = await routeEvent({ event, payload, platform, opts });
       return json(200, { ok: true, ...out });
     } catch (err) {
@@ -351,6 +386,7 @@ async function main() {
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
       ghChecks: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_KEY_FILE) || process.env.SENTINEL_GITHUB_CHECKS === '1',
       ghToken: process.env.SENTINEL_GH_TOKEN || undefined,
+      deliveryStorePath: process.env.SENTINEL_GITHUB_DELIVERY_STORE || defaultDeliveryStorePath(),
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);
