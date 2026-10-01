@@ -16,8 +16,9 @@
 // mirroring ingestPR. Missing api client (or a client without both methods)
 // throws fail-closed. Every create/update/supersede appends one audit event
 // via ../../lib/audit.js with actor `github-app`.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { append } from '../../lib/audit.js';
 import { loadStore as loadInstallStore } from './store.js';
@@ -65,7 +66,10 @@ export function saveChecks(store, path = defaultChecksPath()) {
     throw new Error('saveChecks requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  // Atomic write: write to tmp then rename to prevent corruption under concurrency.
+  const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, path);
   return store;
 }
 
