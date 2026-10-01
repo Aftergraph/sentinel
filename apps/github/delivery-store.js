@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+
+export function defaultDeliveryStorePath() {
+  return join(homedir(), '.sentinel', 'github-deliveries.json');
+}
 
 const ALLOWED = Object.freeze({
   pull_request: new Set(['opened', 'synchronize', 'reopened']),
@@ -49,6 +54,8 @@ function canonical(input) {
     if (installationId === undefined || installationId === null || installationId === '') {
       throw new Error('delivery provenance requires installationId');
     }
+  }
+  if (event === 'pull_request' || event === 'workflow_run') {
     if (typeof repository !== 'string' || repository.trim() === '') {
       throw new Error('delivery provenance requires repository');
     }
