@@ -15,6 +15,10 @@ import {
   aggregateEconomicWorkflowRuns,
   postEconomicEvidenceCheck,
 } from './economic-checks.js';
+import {
+  economicEvidenceEnvelopePaths,
+  verifyEconomicEvidenceEnvelope,
+} from './economic-evidence.js';
 
 // Production `gh api` transport for check runs (additive, opt-in).
 // Returns the injected checksApi when present; otherwise builds a per-event
@@ -88,6 +92,18 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
 
     const workflowRuns = await platform.listWorkflowRunsForHead(repo, runHeadSha);
     const aggregate = aggregateEconomicWorkflowRuns({ required, workflowRuns, headSha: runHeadSha });
+
+    let evidenceVerification = null;
+    const envelopePaths = economicEvidenceEnvelopePaths(diffText);
+    if (aggregate.ready && aggregate.success && envelopePaths.length > 0) {
+      evidenceVerification = await verifyEconomicEvidenceEnvelope({
+        repo,
+        headSha: runHeadSha,
+        diffText,
+        platform,
+      });
+    }
+
     const checksApi = checksApiFromOpts(opts, repo, platform);
     if (!checksApi) {
       return {
@@ -95,6 +111,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
         action: aggregate.ready ? 'economic-evidence-ready-no-checks-api' : 'economic-evidence-pending',
         headSha: runHeadSha,
         aggregate,
+        evidenceVerification,
       };
     }
     const check = await postEconomicEvidenceCheck({
@@ -103,6 +120,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
       prNumber: pr,
       headSha: runHeadSha,
       aggregate,
+      evidenceVerification,
       opts,
     });
     return {
