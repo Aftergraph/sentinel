@@ -234,3 +234,45 @@ test('github: HTTP handler enforces signatures end to end', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('github: healthz exposes checks state without auth material', async () => {
+  const { createServer } = await import('node:http');
+  const platform = mockPlatform();
+  const handler = createHandler({ platform, secret: 'unused-for-health', opts: { ghChecks: true } });
+  const server = createServer(handler);
+  await new Promise((r) => server.listen(0, r));
+  const port = server.address().port;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/healthz`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body, { ok: true, service: 'sentinel-github-app', checksEnabled: true });
+    assert.equal(JSON.stringify(body).includes('token'), false);
+    assert.equal(JSON.stringify(body).includes('secret'), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('github: platform fetches exact-ref file content and decodes base64', async () => {
+  const seen = [];
+  const fakeFetch = async (url, init) => {
+    seen.push([init.method, url]);
+    return {
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        type: 'file',
+        encoding: 'base64',
+        content: Buffer.from('{"ok":true}', 'utf8').toString('base64')
+      })
+    };
+  };
+  const p = createPlatform({ token: 't', fetchImpl: fakeFetch });
+  const out = await p.getFileContent('Aftergraph/sentinel', 'docs/evidence/economic-campaigns/c1/evidence-pack.json', H1);
+  assert.equal(out, '{"ok":true}');
+  assert.equal(seen.length, 1);
+  assert.match(seen[0][1], /contents\/docs\/evidence\/economic-campaigns\/c1\/evidence-pack\.json\?ref=/);
+  assert.match(seen[0][1], new RegExp(H1));
+});
