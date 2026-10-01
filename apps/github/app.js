@@ -10,6 +10,11 @@ import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
 import { postCheck } from './checks.js';
 import { createGhClient } from './gh-client.js';
+import {
+  requiredEconomicWorkflows,
+  aggregateEconomicWorkflowRuns,
+  postEconomicEvidenceCheck,
+} from './economic-checks.js';
 
 // Production `gh api` transport for check runs (additive, opt-in).
 // Returns the injected checksApi when present; otherwise builds a per-event
@@ -49,6 +54,63 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
       installationId: record ? record.installationId : null,
     };
   }
+  if (event === 'workflow_run') {
+    if (payload.action !== 'completed') {
+      return { handled: false, action: `ignored:workflow_run:${payload.action || 'unknown'}` };
+    }
+    const run = payload.workflow_run;
+    const pulls = Array.isArray(run?.pull_requests) ? run.pull_requests : [];
+    if (pulls.length === 0) return { handled: false, action: 'ignored:workflow_run:no-pr' };
+
+    const repo = payload.repository?.full_name;
+    const pr = pulls[0]?.number;
+    const runHeadSha = run?.head_sha;
+    if (!repo || !pr || typeof runHeadSha !== 'string') {
+      throw new Error('workflow_run payload missing repo/pr/head (fail closed)');
+    }
+
+    const prData = await platform.getPR(repo, pr);
+    if (prData.head.sha !== runHeadSha) {
+      return { handled: true, action: 'ignored:workflow_run:stale-head', headSha: runHeadSha };
+    }
+
+    const diffText = await platform.getDiff(repo, pr);
+    const required = requiredEconomicWorkflows(diffText);
+    if (required.length === 0) {
+      return { handled: false, action: 'ignored:workflow_run:no-economic-impact' };
+    }
+    if (typeof platform.listWorkflowRunsForHead !== 'function') {
+      throw new Error('platform missing listWorkflowRunsForHead (fail closed)');
+    }
+
+    const workflowRuns = await platform.listWorkflowRunsForHead(repo, runHeadSha);
+    const aggregate = aggregateEconomicWorkflowRuns({ required, workflowRuns, headSha: runHeadSha });
+    const checksApi = checksApiFromOpts(opts, repo);
+    if (!checksApi) {
+      return {
+        handled: true,
+        action: aggregate.ready ? 'economic-evidence-ready-no-checks-api' : 'economic-evidence-pending',
+        headSha: runHeadSha,
+        aggregate,
+      };
+    }
+    const check = await postEconomicEvidenceCheck({
+      api: checksApi,
+      repo,
+      prNumber: pr,
+      headSha: runHeadSha,
+      aggregate,
+      opts,
+    });
+    return {
+      handled: true,
+      action: check.pending ? 'economic-evidence-pending' : 'economic-evidence-check',
+      headSha: runHeadSha,
+      aggregate,
+      check,
+    };
+  }
+
   if (event !== 'pull_request') return { handled: false, action: `ignored:${event}` };
   if (!['opened', 'synchronize', 'reopened'].includes(payload.action)) {
     return { handled: false, action: `ignored:action:${payload.action}` };
