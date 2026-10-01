@@ -107,6 +107,9 @@ test('delivery store is restart-safe and returns immutable provenance for duplic
   assert.equal(first.provenance.installationId, 42);
   assert.equal(first.provenance.repository, 'Aftergraph/sentinel');
   assert.equal(first.provenance.headSha, input.headSha);
+  assert.match(first.provenance.traceId, /^[a-f0-9]{32}$/);
+  assert.match(first.provenance.spanId, /^[a-f0-9]{16}$/);
+  assert.equal(first.provenance.traceparent, `00-${first.provenance.traceId}-${first.provenance.spanId}-01`);
 
   const second = createDeliveryStore({ path }).claim(input);
   assert.equal(second.duplicate, true);
