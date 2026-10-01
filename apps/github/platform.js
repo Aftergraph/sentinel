@@ -90,5 +90,9 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
     listComments: (repo, pr) => req(`/repos/${repo}/issues/${pr}/comments?per_page=100`),
     postComment: (repo, pr, body) => req(`/repos/${repo}/issues/${pr}/comments`, { method: 'POST', body: { body } }),
     patchComment: (repo, commentId, body) => req(`/repos/${repo}/issues/comments/${commentId}`, { method: 'PATCH', body: { body } }),
+    listWorkflowRunsForHead: async (repo, headSha) => {
+      const data = await req(`/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=100`);
+      return Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+    },
   };
 }
