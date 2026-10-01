@@ -105,6 +105,11 @@ function checkKey(repo, prNumber, headSha) {
   return prNumber === null ? `${repo}#${headSha}` : `${repo}#${String(prNumber)}#${headSha}`;
 }
 
+function checkExternalID(repo, prNumber, headSha) {
+  const pr = prNumber === null ? '-' : String(prNumber);
+  return `${CHECK_NAME}:${repo}#${pr}#${headSha}`;
+}
+
 function prPrefix(repo, prNumber) {
   return `${repo}#${String(prNumber)}#`;
 }
@@ -255,9 +260,11 @@ export async function postCheck(input, opts) {
     }
   }
 
+  const externalId = checkExternalID(repo, prNumber, headSha);
   const created = await api.createCheckRun({
     name: CHECK_NAME,
     head_sha: headSha,
+    external_id: externalId,
     status: 'completed',
     conclusion,
     output,
@@ -265,7 +272,7 @@ export async function postCheck(input, opts) {
   const id = checkRunId(created);
   store[key] = {
     repo, prNumber, headSha, verdict, conclusion,
-    checkRunId: id, title: output.title,
+    checkRunId: id, externalId, title: output.title,
     superseded: false,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   };
