@@ -85,7 +85,7 @@ function requireRepo(repo) {
 function appendFields(argv, params, { defaults = false } = {}) {
   const name = params.name ?? (defaults ? CHECK_NAME : undefined);
   const status = params.status ?? (defaults ? 'completed' : undefined);
-  const scalar = { name, head_sha: params.head_sha, status, conclusion: params.conclusion };
+  const scalar = { name, head_sha: params.head_sha, external_id: params.external_id, status, conclusion: params.conclusion };
   for (const [key, value] of Object.entries(scalar)) {
     if (value !== undefined && value !== null) argv.push('-f', `${key}=${value}`);
   }
