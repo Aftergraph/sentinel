@@ -1,0 +1,59 @@
+name: Sentinel GitHub App VDS readback
+
+on:
+  pull_request:
+    paths:
+      - "apps/github/**"
+      - "ops/deploy/**"
+      - ".github/workflows/github-app-vds-readback.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify readback workflow is non-mutating
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=.github/workflows/github-app-vds-readback.yml
+          ! grep -v "grep -E" "$file" | grep -Eq 'systemctl (enable|restart|start|stop)|sudo|chmod|chown|tee /etc|> */etc/'
+
+  readback:
+    runs-on: [self-hosted, linux, x64, aftergraph-ci]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Probe Sentinel GitHub App runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname -s)" = "vmi3517816"
+          test "$(id -un)" = "agci"
+          test "$(id -u)" -ne 0
+          ! sudo -n true >/dev/null 2>&1
+
+          active=false
+          if systemctl is-active --quiet sentinel-github-app.service; then active=true; fi
+          enabled="$(systemctl is-enabled sentinel-github-app.service 2>/dev/null || true)"
+          user="$(systemctl show sentinel-github-app.service -p User --value 2>/dev/null || true)"
+          group="$(systemctl show sentinel-github-app.service -p Group --value 2>/dev/null || true)"
+          main_pid="$(systemctl show sentinel-github-app.service -p MainPID --value 2>/dev/null || true)"
+
+          health_code="$(curl -sS -o /tmp/sentinel-gh-health.json -w '%{http_code}' --max-time 3 http://127.0.0.1:8788/healthz || true)"
+          webhook_get_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8788/webhooks/github || true)"
+
+          printf '{"host":"%s","runner":"%s","service_active":%s,"service_enabled":"%s","service_user":"%s","service_group":"%s","main_pid":"%s","health_http":"%s","webhook_get_http":"%s"}\n' \
+            "$(hostname -s)" "$(id -un)" "$active" "$enabled" "$user" "$group" "$main_pid" "$health_code" "$webhook_get_code"
+
+          if [[ "$health_code" = "200" ]]; then
+            cat /tmp/sentinel-gh-health.json
+            printf '\n'
+          fi
