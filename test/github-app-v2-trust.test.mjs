@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { GITHUB_APP_CONTRACT, assertGitHubAppContract } from '../apps/github/contract.js';
 import { createCredentialIssuer } from '../apps/github/credentials.js';
+import { createPlatform } from '../apps/github/platform.js';
 import { createDeliveryStore } from '../apps/github/delivery-store.js';
 import { handleInstallation, getInstallation, ingestPR, loadPrStore } from '../apps/github/store.js';
 import { loadChecks, postCheck } from '../apps/github/checks.js';
@@ -210,4 +211,27 @@ test('installation repository removal revokes repository scope immediately', asy
   }, { storePath, checksPath: join(dir, 'checks.json') });
   assert.deepEqual(out, { ignored: true });
   assert.equal(apiCalls, 0);
+});
+
+
+test('GitHub platform surface exposes no authority-expanding methods', () => {
+  const platform = createPlatform({
+    token: 'test-token',
+    fetchImpl: async () => { throw new Error('network not expected'); },
+  });
+  for (const forbidden of [
+    'mergePullRequest',
+    'enableAutoMerge',
+    'approvePullRequest',
+    'dismissReview',
+    'updateRef',
+    'createCommit',
+    'updateRuleset',
+    'updateBranchProtection',
+    'createRepositorySecret',
+    'deploy',
+    'release',
+  ]) {
+    assert.equal(platform[forbidden], undefined, forbidden);
+  }
 });
