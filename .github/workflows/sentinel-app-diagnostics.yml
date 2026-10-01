@@ -1,0 +1,74 @@
+name: Sentinel GitHub App Diagnostics
+
+on:
+  push:
+    branches: [ops/sentinel-app-diagnostics]
+    paths:
+      - ".github/workflows/sentinel-app-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-app-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Inspect deployed Sentinel GitHub App
+    runs-on: [self-hosted, Linux, X64, vds]
+    timeout-minutes: 10
+    steps:
+      - name: Host and runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "hostname=$(hostname)"
+          echo "user=$(id -un)"
+          echo "kernel=$(uname -sr)"
+          echo "node=$(node --version 2>/dev/null || true)"
+      - name: Service state
+        shell: bash
+        run: |
+          set -euo pipefail
+          systemctl is-active sentinel-github-app.service || true
+          systemctl is-enabled sentinel-github-app.service || true
+          systemctl show sentinel-github-app.service             -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p FragmentPath -p EnvironmentFiles || true
+      - name: Deployment revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d /opt/sentinel/.git ]; then
+            echo "opt_sentinel_rev=$(git -C /opt/sentinel rev-parse HEAD)"
+            echo "opt_sentinel_branch=$(git -C /opt/sentinel branch --show-current)"
+            git -C /opt/sentinel status --short
+          else
+            echo "/opt/sentinel is not a git checkout"
+            if [ -f /opt/sentinel/package.json ]; then
+              sha256sum /opt/sentinel/package.json
+            fi
+          fi
+          if [ -d /root/sentinel-src/.git ]; then
+            echo "root_source_rev=$(git -C /root/sentinel-src rev-parse HEAD)"
+            echo "root_source_branch=$(git -C /root/sentinel-src branch --show-current)"
+            git -C /root/sentinel-src status --short
+          else
+            echo "/root/sentinel-src unavailable to runner"
+          fi
+      - name: Listener and local health
+        shell: bash
+        run: |
+          set -euo pipefail
+          ss -ltnp 2>/dev/null | grep -E ':(8787|8788)\b' || true
+          for port in 8787 8788; do
+            code="$(curl -sS -o /tmp/sentinel-health-"$port" -w '%{http_code}' --max-time 3 http://127.0.0.1:"$port"/health || true)"
+            echo "health_port_$port=$code"
+            head -c 500 /tmp/sentinel-health-"$port" 2>/dev/null || true
+            echo
+          done
+      - name: Recent service log
+        shell: bash
+        run: |
+          set -euo pipefail
+          journalctl -u sentinel-github-app.service --since '30 minutes ago' --no-pager -n 250             | sed -E 's/(Bearer|token|secret|authorization)[=: ]+[^ ]+/\1=[REDACTED]/Ig' || true
