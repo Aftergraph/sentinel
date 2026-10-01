@@ -48,6 +48,14 @@ import { RULE_PACK_VERSION } from '../../lib/rulepack.js';
 
 const MAX_BODY = 1024 * 1024;
 
+export function githubAppHealth(opts = {}) {
+  return {
+    ok: true,
+    service: 'sentinel-github-app',
+    checksEnabled: Boolean(opts.ghChecks),
+  };
+}
+
 export async function routeEvent({ event, payload, platform, opts = {} }) {
   if (event === 'ping') return { handled: true, action: 'pong' };
   // GitHub App install lifecycle (slice 0+1): persist the installation
@@ -275,6 +283,7 @@ export function createHandler({ platform, secret, opts }) {
       res.end(JSON.stringify(obj));
     };
     try {
+      if (req.method === 'GET' && req.url === '/healthz') return json(200, githubAppHealth(opts));
       if (req.method !== 'POST' || req.url !== '/webhooks/github') return json(404, { error: 'not found' });
       const raw = await readBody(req);
       if (!verifySignature(raw, req.headers['x-hub-signature-256'], secret)) {
