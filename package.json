@@ -23,7 +23,6 @@
   ],
   "license": "MIT",
   "name": "@aftergraph/sentinel",
-  "private": true,
   "scripts": {
     "serve": "node bin/sentinel.js serve",
     "smoke:console": "bash scripts/console-smoke.sh",
@@ -32,5 +31,25 @@
     "verify:labs-preflight": "node scripts/verify-labs-preflight.mjs"
   },
   "type": "module",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aftergraph/sentinel.git"
+  },
+  "homepage": "https://aftergraph.org/sentinel",
+  "bugs": {
+    "url": "https://github.com/Aftergraph/sentinel/issues"
+  },
+  "keywords": [
+    "code-review",
+    "verification",
+    "github-app",
+    "ai-agents",
+    "mcp",
+    "sarif"
+  ]
 }

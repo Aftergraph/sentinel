@@ -53,7 +53,10 @@ AI review comments are cheap; merge confidence is not. Existing reviewers (CodeR
 ## CLI quickstart
 
 ```
-npm install -g @aftergraph/sentinel   # Node >= 20, no build step
+npx github:Aftergraph/sentinel --help        # works today, Node >= 20, no build step
+npm install -g github:Aftergraph/sentinel    # global install from source
+# npm install -g @aftergraph/sentinel       # once published to npm (Aftergraph/.github#61)
+# docker run --rm ghcr.io/aftergraph/sentinel --help   # container image, built on release
 sentinel review --pr 42               # [VERIFY]/manual — needs gh auth + network; exit 0 SHIP / 1 DO NOT SHIP / 2 STALE
 sentinel review --pr 42 --format json # Review + Verdict + Findings per docs/data-model-v0.md
 sentinel review --pr 42 --format sarif > results.sarif
