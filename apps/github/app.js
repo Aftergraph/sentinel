@@ -15,6 +15,10 @@ import {
   aggregateEconomicWorkflowRuns,
   postEconomicEvidenceCheck,
 } from './economic-checks.js';
+import {
+  economicEvidenceEnvelopePaths,
+  verifyEconomicEvidenceEnvelope,
+} from './economic-evidence.js';
 
 // Production `gh api` transport for check runs (additive, opt-in).
 // Returns the injected checksApi when present; otherwise builds a per-event
@@ -43,6 +47,14 @@ import { load as loadMemory } from '../../lib/memory.js';
 import { RULE_PACK_VERSION } from '../../lib/rulepack.js';
 
 const MAX_BODY = 1024 * 1024;
+
+export function githubAppHealth(opts = {}) {
+  return {
+    ok: true,
+    service: 'sentinel-github-app',
+    checksEnabled: Boolean(opts.ghChecks),
+  };
+}
 
 export async function routeEvent({ event, payload, platform, opts = {} }) {
   if (event === 'ping') return { handled: true, action: 'pong' };
@@ -88,6 +100,18 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
 
     const workflowRuns = await platform.listWorkflowRunsForHead(repo, runHeadSha);
     const aggregate = aggregateEconomicWorkflowRuns({ required, workflowRuns, headSha: runHeadSha });
+
+    let evidenceVerification = null;
+    const envelopePaths = economicEvidenceEnvelopePaths(diffText);
+    if (aggregate.ready && aggregate.success && envelopePaths.length > 0) {
+      evidenceVerification = await verifyEconomicEvidenceEnvelope({
+        repo,
+        headSha: runHeadSha,
+        diffText,
+        platform,
+      });
+    }
+
     const checksApi = checksApiFromOpts(opts, repo, platform);
     if (!checksApi) {
       return {
@@ -95,6 +119,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
         action: aggregate.ready ? 'economic-evidence-ready-no-checks-api' : 'economic-evidence-pending',
         headSha: runHeadSha,
         aggregate,
+        evidenceVerification,
       };
     }
     const check = await postEconomicEvidenceCheck({
@@ -103,6 +128,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
       prNumber: pr,
       headSha: runHeadSha,
       aggregate,
+      evidenceVerification,
       opts,
     });
     return {
@@ -257,6 +283,7 @@ export function createHandler({ platform, secret, opts }) {
       res.end(JSON.stringify(obj));
     };
     try {
+      if (req.method === 'GET' && req.url === '/healthz') return json(200, githubAppHealth(opts));
       if (req.method !== 'POST' || req.url !== '/webhooks/github') return json(404, { error: 'not found' });
       const raw = await readBody(req);
       if (!verifySignature(raw, req.headers['x-hub-signature-256'], secret)) {
@@ -322,7 +349,7 @@ async function main() {
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
-      ghChecks: process.env.SENTINEL_GITHUB_CHECKS === '1',
+      ghChecks: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_KEY_FILE) || process.env.SENTINEL_GITHUB_CHECKS === '1',
       ghToken: process.env.SENTINEL_GH_TOKEN || undefined,
     },
   });

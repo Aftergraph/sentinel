@@ -48,8 +48,7 @@ Subscribe to:
 - `installation`
 - `installation_repositories`
 
-When `SENTINEL_GITHUB_CHECKS=1`, App mode uses the installation token directly
-for the Checks API. `gh`/a separate token remains a compatibility fallback only.
+In GitHub App credential mode, Sentinel check runs are always enabled and use the installation token directly for the Checks API. `SENTINEL_GITHUB_CHECKS=1` remains a token-mode compatibility switch; `gh`/a separate token remains fallback only.
 
 ### Economic evidence aggregation
 
@@ -63,6 +62,9 @@ workflow for the changed component:
 - Economic Source Capture
 - Economic Source Generation Ledger
 
-Missing/in-progress required workflows remain pending and never produce a green
-check. A failed required workflow produces a failing
-`sentinel/economic-evidence` check. Superseded HEADs are ignored.
+Missing/in-progress required workflows remain pending and never produce a green check. A failed required workflow produces a failing `sentinel/economic-evidence` check. Superseded HEADs are ignored. Workflow success alone is labeled `WORKFLOWS_VERIFIED`; it is never presented as an attested EvidencePack. A PR that changes exactly one canonical `docs/evidence/economic-campaigns/<campaign>/evidence-pack.json` envelope is independently fetched at the exact PR HEAD and re-verified by Sentinel. Only a repository/head-bound envelope whose campaign and immutable pack both verify is labeled `VERIFIED_EVIDENCE_PACK`.
+
+
+### Runtime health
+
+`GET /healthz` returns a minimal unauthenticated service health object with `checksEnabled`; it exposes no credentials or installation tokens. Use it behind the existing tunnel/service boundary to distinguish an offline App runtime from a GitHub webhook/configuration issue.
