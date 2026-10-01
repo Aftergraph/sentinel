@@ -126,7 +126,7 @@ export async function pollGitHubInstallationOnce({
               pull_request: { number: prNumber },
             },
             platform,
-            opts,
+            opts: { ...opts, knownInstallationRepos: [repo] },
           });
           summary.reviewed += 1;
         }
