@@ -41,6 +41,15 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/gh-aw compile sentinel-verdict-review --strict
+      - name: Emit generated lock payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'GH_AW_LOCK_B64_BEGIN'
+          base64 -w0 .github/workflows/sentinel-verdict-review.lock.yml
+          echo
+          echo 'GH_AW_LOCK_B64_END'
+
 
       - name: Commit generated lock file
         shell: bash
