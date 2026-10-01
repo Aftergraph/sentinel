@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   GITHUB_EVIDENCE_CONTRACT,
   makeGitHubEvidence,
   verifyGitHubEvidence,
 } from '../apps/github/evidence.js';
+import { createGitHubEvidenceStore } from '../apps/github/evidence-store.js';
 
 const KEY = 'sentinel-evidence-test-key';
 
@@ -110,4 +114,31 @@ test('github evidence: serialized envelope contains no credential material', () 
   const serialized = JSON.stringify(env);
   assert.doesNotMatch(serialized, /ghs_|private.?key|secret:\/\//i);
   assert.doesNotMatch(serialized, new RegExp(KEY));
+});
+
+
+test('github evidence store: persists only verified content-addressed envelopes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-gh-evidence-'));
+  const path = join(dir, 'evidence.json');
+  const store = createGitHubEvidenceStore(path, { signingKey: KEY });
+
+  const env = makeGitHubEvidence(base(), { signingKey: KEY });
+  const stored = store.put(env);
+  assert.equal(stored.evidence_id, env.evidence_id);
+  assert.deepEqual(store.get(env.evidence_id), env);
+  assert.deepEqual(store.list().map((x) => x.evidence_id), [env.evidence_id]);
+
+  const tampered = { ...env, headSha: 'd'.repeat(40) };
+  assert.throws(() => store.put(tampered), /invalid evidence/i);
+  assert.deepEqual(store.list().map((x) => x.evidence_id), [env.evidence_id]);
+});
+
+test('github evidence store: corrupt durable state fails closed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-gh-evidence-'));
+  const path = join(dir, 'evidence.json');
+  writeFileSync(path, '{not-json');
+  assert.throws(
+    () => createGitHubEvidenceStore(path, { signingKey: KEY }),
+    /corrupt/i,
+  );
 });
