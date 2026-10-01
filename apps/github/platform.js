@@ -143,6 +143,7 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
           head_sha: params.head_sha,
           status: params.status,
           conclusion: params.conclusion,
+          external_id: params.external_id,
           output: params.output,
         },
       });
@@ -156,6 +157,7 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
           ...(params.name !== undefined ? { name: params.name } : {}),
           ...(params.status !== undefined ? { status: params.status } : {}),
           ...(params.conclusion !== undefined ? { conclusion: params.conclusion } : {}),
+          ...(params.external_id !== undefined ? { external_id: params.external_id } : {}),
           ...(params.output !== undefined ? { output: params.output } : {}),
         },
       });
