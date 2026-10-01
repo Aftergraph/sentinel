@@ -36,7 +36,16 @@ ProtectControlGroups=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictSUIDSGID=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+# MemoryDenyWriteExecute is deliberately absent. V8 allocates executable memory
+# for JIT code; with the flag set, node aborts before ExecStart reaches
+# app.js — it traps in SetPermissionsOnExecutableMemoryChunk with
+# "Check failed: 12 == errno" (ENOMEM) and systemd reports status=5/TRAP.
+# That happens *instead of* the fail-closed credential check, so the unit
+# core-dumped rather than reporting "Missing GITHUB_WEBHOOK_SECRET (fail
+# closed)". Verified 2026-10-01 on the VDS: with this directive removed the
+# same binary boots, refuses on the empty env, and serves signed webhooks on
+# 127.0.0.1:8788 (unsigned, forged and non-POST all rejected).
+# The rest of the hardening set is unchanged.
 
 [Install]
 WantedBy=multi-user.target
