@@ -362,6 +362,10 @@ async function main() {
   createServer(handler).listen(port, () => console.error(`sentinel github-app listening on :${port}`));
 
   if (process.env.SENTINEL_GITHUB_POLL === '1') {
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_KEY_FILE) {
+      console.error('SENTINEL_GITHUB_POLL requires GitHub App credentials (fail closed)');
+      process.exit(1);
+    }
     const intervalMs = parseInt(process.env.SENTINEL_GITHUB_POLL_INTERVAL_MS || '30000', 10);
     const pollOpts = {
       rulePack: config.rulePack || undefined,
