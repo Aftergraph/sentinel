@@ -340,7 +340,7 @@ async function main() {
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
-      ghChecks: process.env.SENTINEL_GITHUB_CHECKS === '1',
+      ghChecks: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_KEY_FILE) || process.env.SENTINEL_GITHUB_CHECKS === '1',
       ghToken: process.env.SENTINEL_GH_TOKEN || undefined,
     },
   });
