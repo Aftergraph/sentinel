@@ -75,7 +75,12 @@ jobs:
           port="$(run_root awk -F= '$1=="PORT" {print $2}' /etc/sentinel/github-app.env | tail -n 1 | tr -d '[:space:]')"
           port="${port:-8787}"
           [[ "$port" =~ ^[0-9]+$ ]]
-          health_code="$(curl -sS --resolve "sentinel-loopback.invalid:${port}:127.0.0.1" -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 5 "http://sentinel-loopback.invalid:${port}/healthz")"
+          health_code="000"
+          for attempt in $(seq 1 20); do
+            health_code="$(curl -sS --noproxy '*' --resolve "sentinel-loopback.invalid:${port}:127.0.0.1" -o "${{ runner.temp }}/sentinel-health.json" -w '%{http_code}' --max-time 2 "http://sentinel-loopback.invalid:${port}/healthz" || true)"
+            if [ "$health_code" = "200" ]; then break; fi
+            sleep 0.5
+          done
           test "$health_code" = "200"
           cat "${{ runner.temp }}/sentinel-health.json"
 
