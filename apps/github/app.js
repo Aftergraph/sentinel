@@ -9,6 +9,7 @@ import { renderCard, findOwnComment } from './card.js';
 import { createPlatform } from './platform.js';
 import { handleInstallation, selectRepo, ingestPR, captureHead } from './store.js';
 import { createDeliveryStore, defaultDeliveryStorePath } from './delivery-store.js';
+import { GITHUB_APP_CONTRACT } from './contract.js';
 import { postCheck } from './checks.js';
 import { createGhClient } from './gh-client.js';
 import {
@@ -69,6 +70,17 @@ export function githubAppHealth(opts = {}) {
   return {
     ok: true,
     service: 'sentinel-github-app',
+    checksEnabled: Boolean(opts.ghChecks),
+  };
+}
+
+export function githubAppReadiness(opts = {}) {
+  const durable = typeof opts.deliveryStorePath === 'string' && opts.deliveryStorePath.trim() !== '';
+  return {
+    ready: durable,
+    service: 'sentinel-github-app',
+    deliveryStore: durable ? 'durable' : 'missing',
+    contract: GITHUB_APP_CONTRACT.version,
     checksEnabled: Boolean(opts.ghChecks),
   };
 }
@@ -304,6 +316,10 @@ export function createHandler({ platform, secret, opts = {} }) {
     };
     try {
       if (req.method === 'GET' && req.url === '/healthz') return json(200, githubAppHealth(opts));
+      if (req.method === 'GET' && req.url === '/readyz') {
+        const readiness = githubAppReadiness(opts);
+        return json(readiness.ready ? 200 : 503, readiness);
+      }
       if (req.method !== 'POST' || req.url !== '/webhooks/github') return json(404, { error: 'not found' });
       const raw = await readBody(req);
       if (!verifySignature(raw, req.headers['x-hub-signature-256'], secret)) {
