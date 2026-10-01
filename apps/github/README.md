@@ -68,3 +68,19 @@ Missing/in-progress required workflows remain pending and never produce a green 
 ### Runtime health
 
 `GET /healthz` returns a minimal unauthenticated service health object with `checksEnabled`; it exposes no credentials or installation tokens. Use it behind the existing tunnel/service boundary to distinguish an offline App runtime from a GitHub webhook/configuration issue.
+
+
+### Outbound poll mode
+
+When public webhook ingress is unavailable, set `SENTINEL_GITHUB_POLL=1` in GitHub App credential mode. Sentinel uses its short-lived installation token to list installed repositories and open PRs, then runs the same exact-HEAD review and economic evidence aggregation used by webhook events.
+
+Recommended first rollout:
+
+```
+SENTINEL_GITHUB_POLL=1
+SENTINEL_GITHUB_POLL_INTERVAL_MS=30000
+SENTINEL_GITHUB_POLL_REPOS=Aftergraph/sentinel
+SENTINEL_GITHUB_POLL_STATE=/var/lib/sentinel/github-poll-state.json
+```
+
+The poller persists HEAD and economic-state fingerprints. A PR is re-reviewed only when its HEAD changes; economic checks are updated only when verifier/envelope state changes. Poll mode requires GitHub App credentials and fails closed in token-only mode. Webhooks may remain configured as a latency optimization, but correctness no longer depends on a public inbound listener.

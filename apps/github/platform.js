@@ -85,6 +85,14 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
   }
 
   return {
+    listInstallationRepositories: async () => {
+      const data = await req('/installation/repositories?per_page=100');
+      return Array.isArray(data?.repositories) ? data.repositories : [];
+    },
+    listOpenPRs: async (repo) => {
+      const data = await req(`/repos/${repo}/pulls?state=open&per_page=100`);
+      return Array.isArray(data) ? data : [];
+    },
     getPR: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`),
     getDiff: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`, { accept: 'application/vnd.github.v3.diff' }),
     listComments: (repo, pr) => req(`/repos/${repo}/issues/${pr}/comments?per_page=100`),

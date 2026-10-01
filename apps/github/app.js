@@ -19,6 +19,7 @@ import {
   economicEvidenceEnvelopePaths,
   verifyEconomicEvidenceEnvelope,
 } from './economic-evidence.js';
+import { startGitHubInstallationPoller } from './poller.js';
 
 // Production `gh api` transport for check runs (additive, opt-in).
 // Returns the injected checksApi when present; otherwise builds a per-event
@@ -53,6 +54,7 @@ export function githubAppHealth(opts = {}) {
     ok: true,
     service: 'sentinel-github-app',
     checksEnabled: Boolean(opts.ghChecks),
+    pollingEnabled: Boolean(opts.pollingEnabled),
   };
 }
 
@@ -351,10 +353,42 @@ async function main() {
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
       ghChecks: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_KEY_FILE) || process.env.SENTINEL_GITHUB_CHECKS === '1',
       ghToken: process.env.SENTINEL_GH_TOKEN || undefined,
+      pollingEnabled: process.env.SENTINEL_GITHUB_POLL === '1',
+      pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
+      pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);
   createServer(handler).listen(port, () => console.error(`sentinel github-app listening on :${port}`));
+
+  if (process.env.SENTINEL_GITHUB_POLL === '1') {
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_KEY_FILE) {
+      console.error('SENTINEL_GITHUB_POLL requires GitHub App credentials (fail closed)');
+      process.exit(1);
+    }
+    const intervalMs = parseInt(process.env.SENTINEL_GITHUB_POLL_INTERVAL_MS || '30000', 10);
+    const pollOpts = {
+      rulePack: config.rulePack || undefined,
+      exclude: config.exclude,
+      configHash: null,
+      ledgerPath: process.env.SENTINEL_LEDGER || undefined,
+      memoryPath: process.env.SENTINEL_MEMORY || undefined,
+      storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
+      ghChecks: true,
+      pollingEnabled: true,
+      pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
+      pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
+    };
+    startGitHubInstallationPoller({
+      platform,
+      opts: pollOpts,
+      intervalMs,
+      routePullRequest: routeEvent,
+      onResult: (result) => console.error('sentinel github poll ' + JSON.stringify(result)),
+      onError: (err) => console.error('sentinel github poll error: ' + String(err?.message || err)),
+    });
+    console.error(`sentinel github poller enabled interval_ms=${intervalMs}`);
+  }
 }
 
 const invoked = process.argv[1] && process.argv[1].endsWith('apps/github/app.js');
