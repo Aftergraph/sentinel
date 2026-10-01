@@ -23,9 +23,12 @@ import {
 // the exact prior return shape. opts.ghExec / opts.ghToken customize the
 // client (exec injection keeps tests offline); the token travels via
 // GH_TOKEN env, never argv, and is never logged.
-export function checksApiFromOpts(opts = {}, repo) {
+export function checksApiFromOpts(opts = {}, repo, platform = null) {
   if (opts.checksApi || opts.checkApi) return opts.checksApi || opts.checkApi;
   if (!opts.ghChecks) return null;
+  if (platform && typeof platform.createCheckRun === 'function' && typeof platform.updateCheckRun === 'function') {
+    return platform;
+  }
   return createGhClient({ repo, exec: opts.ghExec, token: opts.ghToken });
 }
 
@@ -85,7 +88,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
 
     const workflowRuns = await platform.listWorkflowRunsForHead(repo, runHeadSha);
     const aggregate = aggregateEconomicWorkflowRuns({ required, workflowRuns, headSha: runHeadSha });
-    const checksApi = checksApiFromOpts(opts, repo);
+    const checksApi = checksApiFromOpts(opts, repo, platform);
     if (!checksApi) {
       return {
         handled: true,
@@ -198,7 +201,7 @@ export async function routeEvent({ event, payload, platform, opts = {} }) {
   // Additive check-runs transport: only when a client is injected (existing
   // callers without one see the exact prior return shape). Fail-closed like
   // the rest of the slice — a checks error propagates to the 500 path.
-  const checksApi = checksApiFromOpts(opts, repo);
+  const checksApi = checksApiFromOpts(opts, repo, platform);
   if (!checksApi) {
     return { handled: true, action, verdict, receipt: receipt.receipt_id };
   }
