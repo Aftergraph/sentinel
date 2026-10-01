@@ -37,7 +37,8 @@ jobs:
           test "${{ inputs.confirmation }}" = "DEPLOY_SENTINEL_GITHUB_APP"
           actual="$(git rev-parse HEAD)"
           test "$actual" = "${{ inputs.release_sha }}"
-          test "$(hostname -s)" = "vmi3517816"
+          test "${RUNNER_NAME:-}" = "vps-ci-01"
+          test "$(id -un)" = "nora"
           run_root() {
             if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
           }
