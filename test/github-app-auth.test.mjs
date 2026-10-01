@@ -159,3 +159,29 @@ test('github auth: boot prefers App JWT env over a plain token', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('github auth: installation token request is repository-scoped and permission-narrowed', async () => {
+  const { privateKey } = testKeys();
+  let tokenRequest = null;
+  const fakeFetch = async (url, init) => {
+    if (url.endsWith('/app/installations/42/access_tokens')) {
+      tokenRequest = JSON.parse(init.body || '{}');
+      return jsonResponse({ token: 'inst-scoped', expires_at: new Date(Date.now() + 3600_000).toISOString() });
+    }
+    if (url.endsWith('/repos/o/r/pulls/7')) {
+      return jsonResponse({ head: { sha: H1 }, base: { sha: B } });
+    }
+    throw new Error(`unexpected ${init.method} ${url}`);
+  };
+  const p = createPlatform({ appId: '1', privateKeyPem: privateKey, installationId: 42, fetchImpl: fakeFetch });
+  await p.getPR('o/r', 7);
+  assert.deepEqual(tokenRequest.repositories, ['r']);
+  assert.deepEqual(tokenRequest.permissions, {
+    contents: 'read',
+    pull_requests: 'read',
+    issues: 'write',
+    actions: 'read',
+    checks: 'write',
+  });
+});
