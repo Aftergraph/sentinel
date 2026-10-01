@@ -1,3 +1,4 @@
+import { parseCommand } from "./commands.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -131,6 +132,36 @@ export async function pollGitHubInstallationOnce({
           summary.reviewed += 1;
         }
 
+        // PR commands without an issue_comment subscription: read the PR
+        // conversation each poll and route new @sentinel comments. The first
+        // sighting only records a baseline so history is never replayed.
+        let lastCommentId = prior.lastCommentId ?? null;
+        if (typeof platform.listComments === "function") {
+          const comments = await platform.listComments(repo, prNumber);
+          const list = Array.isArray(comments) ? comments : [];
+          const maxId = list.reduce((m, c) => (Number(c?.id) > m ? Number(c.id) : m), Number(lastCommentId) || 0);
+          if (lastCommentId !== null) {
+            const fresh = list
+              .filter((c) => Number(c?.id) > Number(lastCommentId) && parseCommand(c?.body))
+              .sort((a, b) => Number(a.id) - Number(b.id));
+            for (const comment of fresh) {
+              await routePullRequest({
+                event: "issue_comment",
+                payload: {
+                  action: "created",
+                  repository: { full_name: repo },
+                  issue: { number: prNumber, pull_request: {} },
+                  comment,
+                },
+                platform,
+                opts: { ...opts, knownInstallationRepos: [repo] },
+              });
+              summary.commands = (summary.commands || 0) + 1;
+            }
+          }
+          lastCommentId = maxId;
+        }
+
         const diffText = await platform.getDiff(repo, prNumber);
         const required = requiredEconomicWorkflows(diffText);
         let nextEconomicFingerprint = null;
@@ -180,6 +211,7 @@ export async function pollGitHubInstallationOnce({
           headSha,
           baseSha,
           economicFingerprint: nextEconomicFingerprint,
+          lastCommentId,
           observedAt: new Date().toISOString(),
         };
       } catch (err) {

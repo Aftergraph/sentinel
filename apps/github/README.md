@@ -32,7 +32,7 @@ Write-level humans (OWNER, MEMBER, COLLABORATOR) can drive Sentinel from a PR co
 - `@sentinel why <rule-id>`: explain a rule and its severity.
 - `@sentinel help`: list commands.
 
-Bots (Sentinel included) and outside contributors are ignored, so replies never loop. The `sentinel/review` check summary binds verdict, exact HEAD, base SHA and receipt id.
+Bots (Sentinel included) and outside contributors are ignored, so replies never loop. In outbound poll mode (`SENTINEL_GITHUB_POLL=1`) Sentinel also reads new PR comments each poll, so commands work without an `issue_comment` subscription or public webhook ingress; the first sighting of a PR records a baseline and never replays old commands. The `sentinel/review` check summary binds verdict, exact HEAD, base SHA and receipt id.
 
 ## Cloudflare
 
