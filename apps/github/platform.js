@@ -90,5 +90,36 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
     listComments: (repo, pr) => req(`/repos/${repo}/issues/${pr}/comments?per_page=100`),
     postComment: (repo, pr, body) => req(`/repos/${repo}/issues/${pr}/comments`, { method: 'POST', body: { body } }),
     patchComment: (repo, commentId, body) => req(`/repos/${repo}/issues/comments/${commentId}`, { method: 'PATCH', body: { body } }),
+    listWorkflowRunsForHead: async (repo, headSha) => {
+      const data = await req(`/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=100`);
+      return Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+    },
+    createCheckRun: (params = {}) => {
+      const repo = params.repo;
+      if (!repo) throw new Error('createCheckRun requires repo');
+      return req(`/repos/${repo}/check-runs`, {
+        method: 'POST',
+        body: {
+          name: params.name,
+          head_sha: params.head_sha,
+          status: params.status,
+          conclusion: params.conclusion,
+          output: params.output,
+        },
+      });
+    },
+    updateCheckRun: (id, params = {}) => {
+      const repo = params.repo;
+      if (!repo) throw new Error('updateCheckRun requires repo');
+      return req(`/repos/${repo}/check-runs/${id}`, {
+        method: 'PATCH',
+        body: {
+          ...(params.name !== undefined ? { name: params.name } : {}),
+          ...(params.status !== undefined ? { status: params.status } : {}),
+          ...(params.conclusion !== undefined ? { conclusion: params.conclusion } : {}),
+          ...(params.output !== undefined ? { output: params.output } : {}),
+        },
+      });
+    },
   };
 }
