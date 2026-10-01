@@ -94,6 +94,19 @@ jobs:
 
           printf '{"release_sha":"%s","service_active":true,"health_http":"200","rulepack_sha256":"sha256:%s","fihim_verifier_sha256":"sha256:%s"}\n'             "${{ inputs.release_sha }}" "$deployed_hash" "$deployed_verifier_hash"             > "${{ runner.temp }}/sentinel-vds-deploy-receipt.json"
 
+      - name: Service diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          }
+          run_root systemctl status sentinel-github-app.service --no-pager -n 0 || true
+          # Only boot/fail-closed lines: poll summaries may name private repos.
+          run_root journalctl -u sentinel-github-app.service -n 200 --no-pager -o cat \
+            | grep -E 'fail closed|listening on|Error|EADDRINUSE|EACCES|ENOENT|requires' \
+            | grep -v 'sentinel github poll ' | tail -n 20 || true
+
       - name: Upload deployment receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

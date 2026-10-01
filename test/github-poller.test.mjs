@@ -101,3 +101,27 @@ test("poller fails closed on corrupt persisted state",async()=>{
     );
   }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test("poller routes new @sentinel comments once, never replays history", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sentinel-poller-"));
+  try {
+    const platform = basicPlatform();
+    let comments = [
+      { id: 10, body: "@sentinel review", author_association: "OWNER", user: { login: "jonas", type: "User" } },
+    ];
+    platform.listComments = async () => comments;
+    const routed = [];
+    const routePullRequest = async (ev) => { routed.push(ev.event + ":" + (ev.payload.comment?.id ?? "")); return { handled: true }; };
+    const opts = { pollStatePath: join(dir, "poll.json"), pollRepos: ["Aftergraph/sentinel"] };
+    await pollGitHubInstallationOnce({ platform, opts, routePullRequest });
+    assert.deepEqual(routed, ["pull_request:"], "first sighting: review only, old command is baseline");
+    comments = [...comments,
+      { id: 11, body: "lgtm", author_association: "OWNER", user: { login: "jonas", type: "User" } },
+      { id: 12, body: "@sentinel why x", author_association: "MEMBER", user: { login: "jonas", type: "User" } }];
+    const s2 = await pollGitHubInstallationOnce({ platform, opts, routePullRequest });
+    assert.deepEqual(routed, ["pull_request:", "issue_comment:12"]);
+    assert.equal(s2.commands, 1);
+    await pollGitHubInstallationOnce({ platform, opts, routePullRequest });
+    assert.equal(routed.length, 2, "same comment never routed twice");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
