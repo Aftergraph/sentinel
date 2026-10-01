@@ -131,11 +131,16 @@ export function handleInstallation(payload, { storePath = defaultStorePath() } =
     return null;
   }
 
-  const repos = repoNames(payload.repositories);
+  const added = repoNames(payload.repositories_added ?? payload.repositories);
+  const removed = repoNames(payload.repositories_removed);
   const store = loadStore(storePath);
   const prev = store[key] || null;
-  const merged = prev ? [...prev.repos] : [];
-  for (const name of repos) {
+  let merged = prev ? [...prev.repos] : [];
+  if (removed.length > 0) {
+    const removedSet = new Set(removed);
+    merged = merged.filter((name) => !removedSet.has(name));
+  }
+  for (const name of added) {
     if (!merged.includes(name)) merged.push(name);
   }
   const record = {
@@ -201,13 +206,16 @@ function resolvePrPath(opts) {
 
 export function loadPrStore(path = defaultPrStorePath()) {
   if (!existsSync(path)) return {};
+  let raw;
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw;
-  } catch {
-    return {};
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new Error(`github PR store: corrupt store file (${path}): ${err.message}`);
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`github PR store: corrupt store file (${path}): not an object`);
+  }
+  return raw;
 }
 
 export function savePrStore(store, path = defaultPrStorePath()) {
@@ -215,7 +223,9 @@ export function savePrStore(store, path = defaultPrStorePath()) {
     throw new Error('savePrStore requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, path);
   return store;
 }
 
