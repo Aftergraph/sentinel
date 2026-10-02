@@ -64,3 +64,23 @@ test('a failed PATCH leaves the env untouched and removes the temp file', async 
   assert.equal(fs.store['/e.env'], ENV);
   assert.deepEqual(Object.keys(fs.store).sort(), ['/e.env', '/k.pem']);
 });
+
+test('rotate with a URL moves the hook in the same PATCH', async () => {
+  const fs = memFs({ '/e.env': ENV, '/k.pem': pem });
+  const { fn, calls } = fakeFetch();
+  const url = 'https://sentinel.aftergraph.org/webhooks/github';
+  const r = await run('rotate', '/e.env', { fetchImpl: fn, fs, randomHex: () => 'cd'.repeat(32), url });
+  assert.deepEqual(JSON.parse(calls[1].body), { secret: 'cd'.repeat(32), url, content_type: 'json' });
+  assert.equal(r.webhook_host, 'sentinel.aftergraph.org');
+  assert.equal(r.url_changed, true);
+  assert.ok(!JSON.stringify(r).includes('cdcd'));
+});
+
+test('rotate refuses a URL outside aftergraph.org and check refuses any URL', async () => {
+  const fs = memFs({ '/e.env': ENV, '/k.pem': pem });
+  const { fn, calls } = fakeFetch();
+  await assert.rejects(run('rotate', '/e.env', { fetchImpl: fn, fs, url: 'https://evil.example/webhooks/github' }), /aftergraph\.org/);
+  await assert.rejects(run('check', '/e.env', { fetchImpl: fn, fs, url: 'https://sentinel.aftergraph.org/webhooks/github' }), /only be set with rotate/);
+  assert.equal(calls.length, 0);
+  assert.equal(fs.store['/e.env'], ENV);
+});

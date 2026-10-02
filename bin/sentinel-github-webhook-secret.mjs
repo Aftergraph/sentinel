@@ -3,7 +3,7 @@
 // generated, stored and registered without ever leaving the machine.
 //
 //   node bin/sentinel-github-webhook-secret.mjs check  <env-file>
-//   node bin/sentinel-github-webhook-secret.mjs rotate <env-file>
+//   node bin/sentinel-github-webhook-secret.mjs rotate <env-file> [https://<name>.aftergraph.org/webhooks/github]
 //
 // Run as root through /usr/local/sbin/sentinel-deploy. `check` reads the App's
 // webhook config (host only, never the secret). `rotate` writes a new secret to
@@ -56,14 +56,18 @@ async function hookReq(fetchFn, jwt, method, body) {
   return data;
 }
 
+export const WEBHOOK_URL_RE = /^https:\/\/[a-z0-9-]+\.aftergraph\.org\/webhooks\/github$/;
+
 function hostOf(url) {
   try { return new URL(url).host; } catch { return ''; }
 }
 
-export async function run(mode, envPath, { fetchImpl, randomHex, fs: fsi } = {}) {
+export async function run(mode, envPath, { fetchImpl, randomHex, fs: fsi, url } = {}) {
   const fetchFn = fetchImpl || fetch;
   const f = fsi || { readFileSync, writeFileSync, renameSync, unlinkSync, statSync, chownSync, openSync, fsyncSync, closeSync };
   if (mode !== 'check' && mode !== 'rotate') throw new Error('mode must be check or rotate');
+  if (url && mode !== 'rotate') throw new Error('a webhook URL can only be set with rotate');
+  if (url && !WEBHOOK_URL_RE.test(url)) throw new Error('webhook URL must be https://<name>.aftergraph.org/webhooks/github');
   const envText = f.readFileSync(envPath, 'utf8');
   const env = parseEnv(envText);
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_KEY_FILE) throw new Error('env lacks GITHUB_APP_ID or GITHUB_APP_KEY_FILE');
@@ -76,7 +80,7 @@ export async function run(mode, envPath, { fetchImpl, randomHex, fs: fsi } = {})
     local_secret_set: Boolean(env.GITHUB_WEBHOOK_SECRET),
   };
   if (mode === 'check') return summary;
-  if (!config.url) throw new Error('the App has no webhook URL; set one before rotating');
+  if (!config.url && !url) throw new Error('the App has no webhook URL; set one before rotating');
 
   const secret = randomHex ? randomHex() : randomBytes(32).toString('hex');
   const st = f.statSync(envPath);
@@ -85,19 +89,19 @@ export async function run(mode, envPath, { fetchImpl, randomHex, fs: fsi } = {})
   try {
     f.chownSync(tmp, st.uid, st.gid);
     const fd = f.openSync(tmp, 'r'); f.fsyncSync(fd); f.closeSync(fd);
-    await hookReq(fetchFn, jwt, 'PATCH', { secret });
+    await hookReq(fetchFn, jwt, 'PATCH', url ? { secret, url, content_type: 'json' } : { secret });
   } catch (err) {
     try { f.unlinkSync(tmp); } catch {}
     throw err;
   }
   f.renameSync(tmp, envPath);
-  return { ...summary, rotated: true, local_secret_set: true };
+  return { ...summary, ...(url ? { webhook_host: hostOf(url), url_changed: hostOf(url) !== summary.webhook_host } : {}), rotated: true, local_secret_set: true };
 }
 
 const invoked = process.argv[1] && process.argv[1].endsWith('sentinel-github-webhook-secret.mjs');
 if (invoked) {
-  const [mode, envPath] = process.argv.slice(2);
-  run(mode, envPath || '/etc/sentinel/github-app.env')
+  const [mode, envPath, url] = process.argv.slice(2);
+  run(mode, envPath || '/etc/sentinel/github-app.env', { url: url || undefined })
     .then((r) => { console.log(JSON.stringify(r)); })
     .catch((err) => { console.error(`sentinel-github-webhook-secret: ${err.message}`); process.exit(1); });
 }

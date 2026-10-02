@@ -55,10 +55,97 @@ case "${verb}" in
     # /opt/sentinel is 0750 sentinel:sentinel, so the runner cannot read it directly.
     sha256sum /opt/sentinel/lib/rulepack.js /opt/sentinel/lib/fihim-operator-deployment-verifier.mjs
     ;;
-  webhook-check|webhook-rotate)
-    [[ $# -eq 0 ]] || die "${verb} takes no arguments"
+  webhook-check)
+    [[ $# -eq 0 ]] || die "webhook-check takes no arguments"
+    node /opt/sentinel/bin/sentinel-github-webhook-secret.mjs check "${ENV_FILE}"
+    ;;
+  webhook-rotate)
+    # Optional URL moves the App webhook in the same PATCH as the new secret.
+    [[ $# -le 1 ]] || die "usage: webhook-rotate [https://<name>.aftergraph.org/webhooks/github]"
+    if [[ $# -eq 1 ]]; then
+      [[ "$1" =~ ^https://[a-z0-9-]+\.aftergraph\.org/webhooks/github$ ]] || die "url must be https://<name>.aftergraph.org/webhooks/github"
+    fi
     # Secret is generated, stored and registered on this host; never printed.
-    node /opt/sentinel/bin/sentinel-github-webhook-secret.mjs "${verb#webhook-}" "${ENV_FILE}"
+    node /opt/sentinel/bin/sentinel-github-webhook-secret.mjs rotate "${ENV_FILE}" "$@"
+    ;;
+  ingress-enable)
+    [[ $# -eq 1 ]] || die "usage: ingress-enable <name>.aftergraph.org"
+    host="$1"
+    [[ "${host}" =~ ^[a-z0-9-]+\.aftergraph\.org$ ]] || die "host must be <name>.aftergraph.org"
+    command -v nginx >/dev/null 2>&1 || die "nginx is not installed"
+    port="$(awk -F= '$1=="PORT" {print $2}' "${ENV_FILE}" | tail -n 1 | tr -d '[:space:]')"; port="${port:-8787}"
+    [[ "${port}" =~ ^[0-9]+$ ]] || die "PORT in ${ENV_FILE} is not numeric"
+    # DNS must already point here, or Let's Encrypt cannot validate.
+    want="$(getent ahostsv4 "${host}" | awk '{print $1}' | sort -u)"
+    [[ -n "${want}" ]] || die "${host} does not resolve yet (add an A record, DNS only)"
+    here=false
+    for ip in ${want}; do
+      if ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -qx "${ip}"; then here=true; fi
+      if [[ "$(curl -4 -s --max-time 5 https://api.ipify.org || true)" == "${ip}" ]]; then here=true; fi
+    done
+    [[ "${here}" == true ]] || die "${host} resolves, but not to this machine"
+    if [[ -d /etc/nginx/sites-enabled ]] && grep -Eq 'include[[:space:]]+/etc/nginx/sites-enabled' /etc/nginx/nginx.conf; then
+      site=/etc/nginx/sites-available/sentinel-webhook.conf; link=/etc/nginx/sites-enabled/sentinel-webhook.conf
+    else
+      site=/etc/nginx/conf.d/sentinel-webhook.conf; link=""
+    fi
+    acme=/var/www/sentinel-acme; live="/etc/letsencrypt/live/${host}"
+    install -d -m 0755 "${acme}"
+    backup=""; if [[ -e "${site}" ]]; then backup="$(mktemp)"; cp -a "${site}" "${backup}"; fi
+    restore() {
+      if [[ -n "${backup}" ]]; then cp -a "${backup}" "${site}"; else rm -f "${site}"; [[ -n "${link}" ]] && rm -f "${link}"; fi
+      nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
+    }
+    apply_site() {
+      [[ -n "${link}" ]] && ln -sfn "${site}" "${link}"
+      if ! nginx -t >/dev/null 2>&1; then nginx -t || true; restore; die "nginx -t failed; previous config restored"; fi
+      systemctl reload nginx
+    }
+    http_block() {
+      cat <<'NGX' | sed -e "s|__HOST__|${host}|g" -e "s|__ACME__|${acme}|g"
+# Managed by sentinel-deploy ingress-enable. Only /webhooks/github is proxied.
+server {
+    listen 80;
+    server_name __HOST__;
+    location ^~ /.well-known/acme-challenge/ { root __ACME__; default_type text/plain; }
+    location / { return 301 https://$host$request_uri; }
+}
+NGX
+    }
+    tls_block() {
+      cat <<'NGX' | sed -e "s|__HOST__|${host}|g" -e "s|__LIVE__|${live}|g" -e "s|__PORT__|${port}|g"
+server {
+    listen 443 ssl;
+    server_name __HOST__;
+    ssl_certificate __LIVE__/fullchain.pem;
+    ssl_certificate_key __LIVE__/privkey.pem;
+    client_max_body_size 25m;
+    location = /webhooks/github {
+        limit_except POST { deny all; }
+        proxy_pass http://127.0.0.1:__PORT__/webhooks/github;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 15s;
+    }
+    location / { return 404; }
+}
+NGX
+    }
+    cert=present
+    if [[ ! -s "${live}/fullchain.pem" ]]; then
+      http_block > "${site}"; apply_site
+      if ! command -v certbot >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q certbot >/dev/null || die "certbot is missing and could not be installed"
+      fi
+      certbot certonly --webroot -w "${acme}" -d "${host}" --non-interactive --agree-tos \
+        --register-unsafely-without-email --keep-until-expiring \
+        --deploy-hook "systemctl reload nginx" >/dev/null 2>&1 || { certbot certonly --webroot -w "${acme}" -d "${host}" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring 2>&1 | tail -n 5 >&2 || true; die "certificate for ${host} could not be issued"; }
+      cert=issued
+    fi
+    { http_block; echo; tls_block; } > "${site}"; apply_site
+    [[ -n "${backup}" ]] && rm -f "${backup}"
+    printf '{"ingress_host":"%s","dns_points_here":true,"cert":"%s","nginx":"reloaded"}\n' "${host}" "${cert}"
     ;;
   host-facts)
     [[ $# -eq 0 ]] || die "host-facts takes no arguments"
@@ -86,6 +173,6 @@ case "${verb}" in
       | grep -v 'sentinel github poll ' | tail -n 20 || true
     ;;
   *)
-    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|host-facts|diagnose)"
+    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|ingress-enable|host-facts|diagnose)"
     ;;
 esac
