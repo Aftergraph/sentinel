@@ -60,6 +60,23 @@ case "${verb}" in
     # Secret is generated, stored and registered on this host; never printed.
     node /opt/sentinel/bin/sentinel-github-webhook-secret.mjs "${verb#webhook-}" "${ENV_FILE}"
     ;;
+  host-facts)
+    [[ $# -eq 0 ]] || die "host-facts takes no arguments"
+    # Booleans only: Actions logs on this public repo must not carry IPs or names.
+    has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
+    ts_running=false; ts_funnel=false
+    if command -v tailscale >/dev/null 2>&1; then
+      tsj="$(tailscale status --json 2>/dev/null || true)"
+      grep -q '"BackendState": *"Running"' <<<"${tsj}" && ts_running=true
+      grep -q 'https://tailscale.com/cap/funnel' <<<"${tsj}" && ts_funnel=true
+    fi
+    l80=false; l443=false
+    ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)80$' && l80=true
+    ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)443$' && l443=true
+    cf_cfg=false; [[ -e /etc/cloudflared/config.yml || -e /root/.cloudflared/cert.pem ]] && cf_cfg=true
+    printf '{"tailscale":%s,"tailscale_running":%s,"tailscale_funnel_cap":%s,"cloudflared":%s,"cloudflared_configured":%s,"caddy":%s,"nginx":%s,"listen_80":%s,"listen_443":%s}\n' \
+      "$(has tailscale)" "${ts_running}" "${ts_funnel}" "$(has cloudflared)" "${cf_cfg}" "$(has caddy)" "$(has nginx)" "${l80}" "${l443}"
+    ;;
   diagnose)
     [[ $# -eq 0 ]] || die "diagnose takes no arguments"
     systemctl status "${UNIT}" --no-pager -n 0 || true
@@ -69,6 +86,6 @@ case "${verb}" in
       | grep -v 'sentinel github poll ' | tail -n 20 || true
     ;;
   *)
-    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|diagnose)"
+    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|host-facts|diagnose)"
     ;;
 esac

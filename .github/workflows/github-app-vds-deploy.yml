@@ -17,6 +17,11 @@ on:
         default: keep
         type: choice
         options: [keep, check, rotate]
+      host_facts:
+        description: "After deploy: print ingress facts for the host (booleans only)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -133,6 +138,13 @@ jobs:
           unsigned="$(curl -sS "${r[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "$base/webhooks/github" || true)"
           echo "unsigned_post_http=$unsigned"
           test "$unsigned" = "401"
+
+      - name: Host ingress facts
+        if: inputs.host_facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy host-facts; else sudo -n /usr/local/sbin/sentinel-deploy host-facts; fi
 
       - name: Service diagnostics on failure
         if: failure()
