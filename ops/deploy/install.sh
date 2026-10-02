@@ -56,6 +56,13 @@ fi
 
 install -m 0644 "${REPO_SRC}/ops/deploy/${UNIT}" "/etc/systemd/system/${UNIT}"
 systemctl daemon-reload
+
+# Keep the root-owned deploy wrapper in step with this revision. install.sh
+# already runs as root from the checkout, so this adds no new trust; it only
+# saves a manual re-run of install-deploy-sudo.sh when the wrapper gains a verb.
+if [[ -e /usr/local/sbin/sentinel-deploy ]]; then
+  install -o root -g root -m 0755 "${REPO_SRC}/ops/deploy/sentinel-deploy" /usr/local/sbin/sentinel-deploy
+fi
 systemctl enable "${UNIT}"
 
 echo

@@ -80,7 +80,7 @@ into the same ledger.
 
 ## Deploy sudo (one-time root step)
 
-The deploy workflow runs as the runner user (`nora` on `vps-ci-01`) and needs root for exactly six verbs. Those verbs live in one root-owned wrapper, `/usr/local/sbin/sentinel-deploy` (`preflight`, `install`, `restart`, `revision`, `port`, `diagnose`). sudo is granted for that single path, with no wildcards and no argument matching:
+The deploy workflow runs as the runner user (`nora` on `vps-ci-01`) and needs root for a fixed set of verbs. Those verbs live in one root-owned wrapper, `/usr/local/sbin/sentinel-deploy` (`preflight`, `install`, `restart`, `revision`, `port`, `hashes`, `diagnose`). sudo is granted for that single path, with no wildcards and no argument matching:
 
 ```bash
 sudo bash ops/deploy/install-deploy-sudo.sh nora
