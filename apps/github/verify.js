@@ -7,6 +7,12 @@ export function verifySignature(rawBody, signatureHeader, secret) {
   const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
   const a = Buffer.from(expected);
   const b = Buffer.from(signatureHeader);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  // Constant-time comparison: pad to equal length so timing doesn't leak
+  // whether the attacker's guess has the right length.
+  const maxLen = Math.max(a.length, b.length);
+  const aPadded = Buffer.alloc(maxLen, 0);
+  const bPadded = Buffer.alloc(maxLen, 0);
+  a.copy(aPadded);
+  b.copy(bPadded);
+  return a.length === b.length && timingSafeEqual(aPadded, bPadded);
 }
