@@ -439,13 +439,25 @@ async function main() {
       pollingEnabled: true,
       pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
       pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
+      ownerFile: process.env.SENTINEL_OWNER_FILE || undefined,
+      instanceId: process.env.SENTINEL_INSTANCE_ID || undefined,
     };
     startGitHubInstallationPoller({
       platform,
       opts: pollOpts,
       intervalMs,
       routePullRequest: routeEvent,
-      onResult: (result) => console.error('sentinel github poll ' + JSON.stringify(result)),
+      onResult: (result) => {
+        // A standby instance is deliberately inert, and `sentinel-deploy
+        // diagnose` filters the per-poll summary line out. Emit the stand-down
+        // on its own line so "running but not reviewing" is never mistaken for
+        // "reviewing".
+        if (result && result.stoodDown) {
+          console.error(`sentinel github poll STOOD DOWN: ${result.reason}`);
+          return;
+        }
+        console.error('sentinel github poll ' + JSON.stringify(result));
+      },
       onError: (err) => console.error('sentinel github poll error: ' + String(err?.message || err)),
     });
     console.error(`sentinel github poller enabled interval_ms=${intervalMs}`);
