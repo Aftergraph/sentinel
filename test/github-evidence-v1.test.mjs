@@ -96,6 +96,74 @@ test('github evidence: states preserve review/workflow/evidence-pack distinction
   );
 });
 
+
+test('github evidence: verified evidence pack binds WORKS execution provenance', () => {
+  const executionProvenance = {
+    routingDecisionHash: '1'.repeat(64),
+    branchId: 'branch-a',
+    branchHash: '2'.repeat(64),
+    lineageHash: '3'.repeat(64),
+    workId: 'wrk_01JTEST',
+    worksEvidenceHash: '4'.repeat(64),
+  };
+  const env = makeGitHubEvidence(base({
+    state: 'VERIFIED_EVIDENCE_PACK',
+    workflowEvidence: [
+      { name: 'Economic Evidence Pack', runId: 11, conclusion: 'success', headSha: 'a'.repeat(40) },
+    ],
+    evidencePackId: 'evp_' + 'd'.repeat(64),
+    executionProvenance,
+  }), { signingKey: KEY });
+
+  assert.deepEqual(env.executionProvenance, executionProvenance);
+  assert.deepEqual(verifyGitHubEvidence(env, { signingKey: KEY }), { valid: true });
+
+  for (const field of ['routingDecisionHash', 'branchHash', 'lineageHash', 'worksEvidenceHash']) {
+    const tampered = {
+      ...env,
+      executionProvenance: { ...env.executionProvenance, [field]: 'f'.repeat(64) },
+    };
+    assert.equal(verifyGitHubEvidence(tampered, { signingKey: KEY }).valid, false, field);
+  }
+});
+
+test('github evidence: execution provenance is fail-closed and evidence-pack scoped', () => {
+  const valid = {
+    routingDecisionHash: '1'.repeat(64),
+    branchId: 'branch-a',
+    branchHash: '2'.repeat(64),
+    lineageHash: '3'.repeat(64),
+    workId: 'wrk_01JTEST',
+    worksEvidenceHash: '4'.repeat(64),
+  };
+  assert.throws(
+    () => makeGitHubEvidence(base({ executionProvenance: valid }), { signingKey: KEY }),
+    /cannot claim execution provenance/i,
+  );
+  assert.throws(
+    () => makeGitHubEvidence(base({
+      state: 'VERIFIED_EVIDENCE_PACK',
+      workflowEvidence: [
+        { name: 'Economic Evidence Pack', runId: 11, conclusion: 'success', headSha: 'a'.repeat(40) },
+      ],
+      evidencePackId: 'evp_' + 'd'.repeat(64),
+      executionProvenance: { ...valid, branchHash: 'not-a-hash' },
+    }), { signingKey: KEY }),
+    /branchHash.*64-hex/i,
+  );
+  assert.throws(
+    () => makeGitHubEvidence(base({
+      state: 'VERIFIED_EVIDENCE_PACK',
+      workflowEvidence: [
+        { name: 'Economic Evidence Pack', runId: 11, conclusion: 'success', headSha: 'a'.repeat(40) },
+      ],
+      evidencePackId: 'evp_' + 'd'.repeat(64),
+      executionProvenance: { ...valid, extra: true },
+    }), { signingKey: KEY }),
+    /unknown or missing fields/i,
+  );
+});
+
 test('github evidence: invalid coordinates and authority-like fields fail closed', () => {
   assert.throws(() => makeGitHubEvidence(base({ headSha: 'branch-head' }), { signingKey: KEY }), /headSha/i);
   assert.throws(() => makeGitHubEvidence(base({ state: 'APPROVED' }), { signingKey: KEY }), /state/i);
