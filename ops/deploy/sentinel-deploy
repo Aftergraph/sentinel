@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Root-owned deploy entrypoint for the Sentinel GitHub App on the VDS.
+# Installed to /usr/local/sbin/sentinel-deploy by ops/deploy/install-deploy-sudo.sh.
+# The CI runner user gets sudo for THIS path only: no wildcards, no shell-quoted
+# argument matching, which is what made the hand-written sudoers invalid.
+#
+# Trust note: `install` runs ops/deploy/install.sh from the runner's checkout,
+# exactly as the workflow did before. The wrapper narrows sudo to fixed verbs and
+# checks the checkout is at the requested commit; it does not make the runner
+# checkout more trustworthy than the CI that produced it.
+set -euo pipefail
+
+UNIT=sentinel-github-app.service
+REVISION_FILE=/opt/sentinel/.source-revision
+ENV_FILE=/etc/sentinel/github-app.env
+
+die() { echo "sentinel-deploy: $*" >&2; exit 2; }
+
+[[ "${EUID}" -eq 0 ]] || die "must run as root (via sudo -n)"
+
+verb="${1:-}"; shift || true
+case "${verb}" in
+  preflight)
+    [[ $# -eq 0 ]] || die "preflight takes no arguments"
+    echo ok
+    ;;
+  install)
+    [[ $# -eq 2 ]] || die "usage: install <checkout-dir> <40-hex-sha>"
+    src="$(realpath -e -- "$1")"; sha="$2"
+    [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || die "sha must be 40 lowercase hex"
+    [[ -f "${src}/ops/deploy/install.sh" ]] || die "no ops/deploy/install.sh under ${src}"
+    head="$(git -c safe.directory="${src}" -C "${src}" rev-parse HEAD)"
+    [[ "${head}" == "${sha}" ]] || die "checkout HEAD ${head} != requested ${sha}"
+    dirty="$(git -c safe.directory="${src}" -C "${src}" status --porcelain --untracked-files=no)"
+    [[ -z "${dirty}" ]] || die "checkout has modified tracked files"
+    bash "${src}/ops/deploy/install.sh"
+    tmp="$(mktemp)"; printf '%s\n' "${sha}" > "${tmp}"
+    install -o root -g root -m 0444 "${tmp}" "${REVISION_FILE}"; rm -f "${tmp}"
+    ;;
+  restart)
+    [[ $# -eq 0 ]] || die "restart takes no arguments"
+    systemctl restart "${UNIT}"
+    systemctl is-active --quiet "${UNIT}"
+    ;;
+  revision)
+    [[ $# -eq 0 ]] || die "revision takes no arguments"
+    cat "${REVISION_FILE}"
+    ;;
+  port)
+    [[ $# -eq 0 ]] || die "port takes no arguments"
+    awk -F= '$1=="PORT" {print $2}' "${ENV_FILE}" | tail -n 1 | tr -d '[:space:]'
+    ;;
+  diagnose)
+    [[ $# -eq 0 ]] || die "diagnose takes no arguments"
+    systemctl status "${UNIT}" --no-pager -n 0 || true
+    # Only boot/fail-closed lines: poll summaries may name private repos.
+    journalctl -u "${UNIT}" -n 200 --no-pager -o cat \
+      | grep -E 'fail closed|listening on|Error|EADDRINUSE|EACCES|ENOENT|requires' \
+      | grep -v 'sentinel github poll ' | tail -n 20 || true
+    ;;
+  *)
+    die "unknown verb '${verb}' (preflight|install|restart|revision|port|diagnose)"
+    ;;
+esac

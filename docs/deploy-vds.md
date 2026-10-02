@@ -77,3 +77,13 @@ sudo systemctl restart sentinel-github-app
 
 State in `/var/lib/sentinel` survives the upgrade, so receipts keep chaining
 into the same ledger.
+
+## Deploy sudo (one-time root step)
+
+The deploy workflow runs as the runner user (`nora` on `vps-ci-01`) and needs root for exactly six verbs. Those verbs live in one root-owned wrapper, `/usr/local/sbin/sentinel-deploy` (`preflight`, `install`, `restart`, `revision`, `port`, `diagnose`). sudo is granted for that single path, with no wildcards and no argument matching:
+
+```bash
+sudo bash ops/deploy/install-deploy-sudo.sh nora
+```
+
+The script validates the new rule with `visudo -cf` before installing it, keeps the old `/etc/sudoers.d/sentinel-deploy` as an inert `*.broken.<timestamp>` backup (sudo skips files containing a dot), re-checks the full tree with `visudo -c`, and prints the resulting `sudo -l` line. Re-run it after any change to `ops/deploy/sentinel-deploy`.
