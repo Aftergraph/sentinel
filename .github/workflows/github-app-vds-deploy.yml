@@ -17,6 +17,11 @@ on:
         default: keep
         type: choice
         options: [keep, check, rotate]
+      ingress_host:
+        description: "Optional <name>.aftergraph.org: serve /webhooks/github there via nginx + Let's Encrypt (DNS A record must point at the host)"
+        required: false
+        default: ""
+        type: string
       host_facts:
         description: "After deploy: print ingress facts for the host (booleans only)"
         required: false
@@ -105,9 +110,21 @@ jobs:
 
           printf '{"release_sha":"%s","service_active":true,"health_http":"200","rulepack_sha256":"sha256:%s","fihim_verifier_sha256":"sha256:%s"}\n'             "${{ inputs.release_sha }}" "$deployed_hash" "$deployed_verifier_hash"             > "${{ runner.temp }}/sentinel-vds-deploy-receipt.json"
 
+      - name: Webhook ingress (nginx + TLS on the host)
+        if: inputs.ingress_host != ''
+        shell: bash
+        env:
+          INGRESS_HOST: ${{ inputs.ingress_host }}
+        run: |
+          set -euo pipefail
+          [[ "$INGRESS_HOST" =~ ^[a-z0-9-]+\.aftergraph\.org$ ]]
+          if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy ingress-enable "$INGRESS_HOST"; else sudo -n /usr/local/sbin/sentinel-deploy ingress-enable "$INGRESS_HOST"; fi
+
       - name: Webhook secret (check or rotate on the host)
         if: inputs.webhook_secret == 'check' || inputs.webhook_secret == 'rotate'
         shell: bash
+        env:
+          INGRESS_HOST: ${{ inputs.ingress_host }}
         run: |
           set -euo pipefail
           deploy() {
@@ -118,7 +135,11 @@ jobs:
             exit 0
           fi
           # Secret is generated, registered on the App and stored on this host; never printed.
-          deploy webhook-rotate
+          if [ -n "${INGRESS_HOST}" ]; then
+            deploy webhook-rotate "https://${INGRESS_HOST}/webhooks/github"
+          else
+            deploy webhook-rotate
+          fi
           deploy restart
 
           port="$(deploy port)"; port="${port:-8787}"
@@ -138,6 +159,12 @@ jobs:
           unsigned="$(curl -sS "${r[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "$base/webhooks/github" || true)"
           echo "unsigned_post_http=$unsigned"
           test "$unsigned" = "401"
+          if [ -n "${INGRESS_HOST}" ]; then
+            # Same check through nginx and the public certificate.
+            pub="$(curl -sS --resolve "${INGRESS_HOST}:443:127.0.0.1" --max-time 5 -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "https://${INGRESS_HOST}/webhooks/github" || true)"
+            echo "public_unsigned_post_http=$pub"
+            test "$pub" = "401"
+          fi
 
       - name: Host ingress facts
         if: inputs.host_facts
