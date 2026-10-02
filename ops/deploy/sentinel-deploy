@@ -33,7 +33,17 @@ case "${verb}" in
     [[ "${head}" == "${sha}" ]] || die "checkout HEAD ${head} != requested ${sha}"
     dirty="$(git -c safe.directory="${src}" -C "${src}" status --porcelain --untracked-files=no)"
     [[ -z "${dirty}" ]] || die "checkout has modified tracked files"
-    bash "${src}/ops/deploy/install.sh"
+    # Install from a root-owned copy of exactly that commit, never from the
+    # runner-writable checkout itself (install.sh refuses non-root sources).
+    stage="$(mktemp -d /root/sentinel-src.XXXXXX)"
+    trap 'rm -rf -- "${stage}"' EXIT
+    chmod 0700 "${stage}"
+    git -c safe.directory="${src}" -C "${src}" archive --format=tar "${sha}" \
+      | tar -x --no-same-owner --no-same-permissions -C "${stage}"
+    chown -R root:root "${stage}"
+    [[ -f "${stage}/ops/deploy/install.sh" ]] || die "archive of ${sha} has no ops/deploy/install.sh"
+    bash "${stage}/ops/deploy/install.sh"
+    rm -rf -- "${stage}"; trap - EXIT
     tmp="$(mktemp)"; printf '%s\n' "${sha}" > "${tmp}"
     install -o root -g root -m 0444 "${tmp}" "${REVISION_FILE}"; rm -f "${tmp}"
     ;;
