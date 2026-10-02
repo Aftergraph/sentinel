@@ -90,11 +90,12 @@ The script validates the new rule with `visudo -cf` before installing it, keeps 
 
 ## Webhook secret (generated on the host)
 
-Run the **Sentinel GitHub App webhook secret** workflow. `mode=check` prints the
-webhook host the App delivers to and whether a local secret is set. `mode=rotate`
-(confirmation `ROTATE_SENTINEL_WEBHOOK_SECRET`) generates a 32-byte secret on the
-VDS, registers it on the App via `PATCH /app/hook/config` (App JWT from the key
-already on the host), swaps it into `/etc/sentinel/github-app.env` only after
-GitHub accepted it, restarts the service, and asserts `webhookEnabled:true` plus
-401 for an unsigned delivery. The secret is never printed or sent anywhere else.
-The wrapper verbs ship with the next deploy, since `install.sh` refreshes them.
+Run the **Sentinel GitHub App VDS deploy** workflow with `webhook_secret=check`
+or `webhook_secret=rotate` (default `keep`). It lives in the deploy workflow
+because the `vds` runner group only admits that workflow. `check` prints the
+webhook host the App delivers to and whether a local secret is set. `rotate`
+generates a 32-byte secret on the VDS, registers it on the App via
+`PATCH /app/hook/config` (App JWT from the key already on the host), swaps it into
+`/etc/sentinel/github-app.env` only after GitHub accepted it, restarts the
+service, and asserts `webhookEnabled:true` plus 401 for an unsigned delivery.
+The secret is never printed or sent anywhere else.
