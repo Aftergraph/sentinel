@@ -82,11 +82,14 @@ jobs:
           cat "${{ runner.temp }}/sentinel-health.json"
 
           checkout_hash="$(sha256sum lib/rulepack.js | awk '{print $1}')"
-          deployed_hash="$(sha256sum /opt/sentinel/lib/rulepack.js | awk '{print $1}')"
+          deploy hashes > "${{ runner.temp }}/sentinel-deployed-hashes.txt"
+          deployed_hash="$(awk '$2=="/opt/sentinel/lib/rulepack.js" {print $1}' "${{ runner.temp }}/sentinel-deployed-hashes.txt")"
+          test -n "$deployed_hash"
           test "$checkout_hash" = "$deployed_hash"
 
           checkout_verifier_hash="$(sha256sum lib/fihim-operator-deployment-verifier.mjs | awk '{print $1}')"
-          deployed_verifier_hash="$(sha256sum /opt/sentinel/lib/fihim-operator-deployment-verifier.mjs | awk '{print $1}')"
+          deployed_verifier_hash="$(awk '$2=="/opt/sentinel/lib/fihim-operator-deployment-verifier.mjs" {print $1}' "${{ runner.temp }}/sentinel-deployed-hashes.txt")"
+          test -n "$deployed_verifier_hash"
           test "$checkout_verifier_hash" = "$deployed_verifier_hash"
 
           printf '{"release_sha":"%s","service_active":true,"health_http":"200","rulepack_sha256":"sha256:%s","fihim_verifier_sha256":"sha256:%s"}\n'             "${{ inputs.release_sha }}" "$deployed_hash" "$deployed_verifier_hash"             > "${{ runner.temp }}/sentinel-vds-deploy-receipt.json"
