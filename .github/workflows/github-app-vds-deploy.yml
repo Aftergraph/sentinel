@@ -39,10 +39,10 @@ jobs:
           test "$actual" = "${{ inputs.release_sha }}"
           test "${RUNNER_NAME:-}" = "vps-ci-01"
           test "$(id -un)" = "nora"
-          run_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
           }
-          run_root true
+          deploy preflight
 
       - name: Verify Sentinel before deployment
         shell: bash
@@ -54,25 +54,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          run_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
           }
-          run_root ops/deploy/install.sh
-          printf '%s\n' "${{ inputs.release_sha }}" > "${{ runner.temp }}/sentinel-source-revision"
-          run_root install -o root -g root -m 0444 "${{ runner.temp }}/sentinel-source-revision" /opt/sentinel/.source-revision
+          deploy install "$GITHUB_WORKSPACE" "${{ inputs.release_sha }}"
 
       - name: Restart and verify runtime
         shell: bash
         run: |
           set -euo pipefail
-          run_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
           }
-          run_root systemctl restart sentinel-github-app.service
-          run_root systemctl is-active --quiet sentinel-github-app.service
-          test "$(run_root cat /opt/sentinel/.source-revision)" = "${{ inputs.release_sha }}"
+          deploy restart
+          test "$(deploy revision)" = "${{ inputs.release_sha }}"
 
-          port="$(run_root awk -F= '$1=="PORT" {print $2}' /etc/sentinel/github-app.env | tail -n 1 | tr -d '[:space:]')"
+          port="$(deploy port)"
           port="${port:-8787}"
           [[ "$port" =~ ^[0-9]+$ ]]
           health_code="000"
@@ -98,14 +95,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          run_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
           }
-          run_root systemctl status sentinel-github-app.service --no-pager -n 0 || true
-          # Only boot/fail-closed lines: poll summaries may name private repos.
-          run_root journalctl -u sentinel-github-app.service -n 200 --no-pager -o cat \
-            | grep -E 'fail closed|listening on|Error|EADDRINUSE|EACCES|ENOENT|requires' \
-            | grep -v 'sentinel github poll ' | tail -n 20 || true
+          deploy diagnose || true
 
       - name: Upload deployment receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
