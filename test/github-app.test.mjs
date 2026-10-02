@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { Readable } from 'node:stream';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -247,7 +248,7 @@ test('github: healthz exposes checks state without auth material', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/healthz`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body, { ok: true, service: 'sentinel-github-app', checksEnabled: true, pollingEnabled: false });
+    assert.deepEqual(body, { ok: true, service: 'sentinel-github-app', checksEnabled: true, pollingEnabled: false, webhookEnabled: true });
     assert.equal(JSON.stringify(body).includes('token'), false);
     assert.equal(JSON.stringify(body).includes('secret'), false);
   } finally {
@@ -275,4 +276,18 @@ test('github: platform fetches exact-ref file content and decodes base64', async
   assert.equal(seen.length, 1);
   assert.match(seen[0][1], /contents\/docs\/evidence\/economic-campaigns\/c1\/evidence-pack\.json\?ref=/);
   assert.match(seen[0][1], new RegExp(H1));
+});
+
+test('poll-only mode: no webhook secret means every webhook is refused, health says so', async () => {
+  const { createHandler: mk } = await import('../apps/github/app.js');
+  const handler = mk({ platform: {}, secret: '', opts: { ghChecks: true, pollingEnabled: true, webhookEnabled: false } });
+  const call = (method, url, body = '') => new Promise((resolve) => {
+    const req = Readable.from([Buffer.from(body)]); req.method = method; req.url = url; req.headers = { 'x-github-event': 'ping', 'x-hub-signature-256': 'sha256=00' };
+    let code; const res = { writeHead: (c) => { code = c; }, end: (b) => resolve({ code, body: JSON.parse(b) }) };
+    handler(req, res);
+  });
+  const h = await call('GET', '/healthz');
+  assert.equal(h.code, 200); assert.equal(h.body.webhookEnabled, false); assert.equal(h.body.pollingEnabled, true);
+  const w = await call('POST', '/webhooks/github', '{"zen":"x"}');
+  assert.equal(w.code, 503); assert.match(w.body.error, /poll-only/);
 });
