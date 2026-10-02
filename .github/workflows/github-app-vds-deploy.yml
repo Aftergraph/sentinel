@@ -42,9 +42,8 @@ jobs:
           test "${RUNNER_NAME:-}" = "vds-aftergraph-ci-sentinel"
           test "$(hostname -s)" = "vmi3517816"
           test "$(id -un)" = "agci"
-          run_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
-
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
           }
           deploy preflight
 
