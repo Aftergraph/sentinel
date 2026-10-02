@@ -19,6 +19,7 @@ const INPUT_FIELDS = new Set([
   'state',
   'workflowEvidence',
   'evidencePackId',
+  'executionProvenance',
 ]);
 
 const HEX40_OR_64 = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -69,6 +70,45 @@ function canonicalWorkflowEvidence(list, headSha) {
   });
 }
 
+function canonicalExecutionProvenance(value) {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('github evidence executionProvenance must be an object');
+  }
+  const keys = Object.keys(value).sort();
+  const allowed = [
+    'branchHash',
+    'branchId',
+    'lineageHash',
+    'routingDecisionHash',
+    'workId',
+    'worksEvidenceHash',
+  ];
+  if (JSON.stringify(keys) !== JSON.stringify(allowed)) {
+    throw new Error('github evidence executionProvenance has unknown or missing fields');
+  }
+  const branchId = assertString('executionProvenance.branchId', value.branchId);
+  const workId = assertString('executionProvenance.workId', value.workId);
+  for (const [name, hash] of [
+    ['routingDecisionHash', value.routingDecisionHash],
+    ['branchHash', value.branchHash],
+    ['lineageHash', value.lineageHash],
+    ['worksEvidenceHash', value.worksEvidenceHash],
+  ]) {
+    if (typeof hash !== 'string' || !HEX64.test(hash)) {
+      throw new Error(`github evidence executionProvenance.${name} must be 64-hex sha256`);
+    }
+  }
+  return Object.freeze({
+    routingDecisionHash: value.routingDecisionHash,
+    branchId,
+    branchHash: value.branchHash,
+    lineageHash: value.lineageHash,
+    workId,
+    worksEvidenceHash: value.worksEvidenceHash,
+  });
+}
+
 function canonicalBody(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('github evidence requires an object');
@@ -111,6 +151,11 @@ function canonicalBody(input) {
     throw new Error(`github evidence state ${input.state} cannot claim an evidence pack`);
   }
 
+  const executionProvenance = canonicalExecutionProvenance(input.executionProvenance);
+  if (executionProvenance !== null && input.state !== 'VERIFIED_EVIDENCE_PACK') {
+    throw new Error(`github evidence state ${input.state} cannot claim execution provenance`);
+  }
+
   const policyHash = input.policyHash ?? null;
   if (policyHash !== null && (typeof policyHash !== 'string' || policyHash.trim() === '')) {
     throw new Error('github evidence policyHash must be null or non-empty string');
@@ -129,6 +174,7 @@ function canonicalBody(input) {
     state: input.state,
     workflowEvidence: Object.freeze(workflowEvidence),
     evidencePackId,
+    ...(executionProvenance === null ? {} : { executionProvenance }),
   });
 }
 
