@@ -21,7 +21,9 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, Linux, X64, vds]
+    # Production host vmi3517816 (Linux aftergraph-ci runner). vps-ci-01 has no
+    # credentials and is not a production target.
+    runs-on: [self-hosted, Linux, X64, aftergraph-ci]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -37,10 +39,12 @@ jobs:
           test "${{ inputs.confirmation }}" = "DEPLOY_SENTINEL_GITHUB_APP"
           actual="$(git rev-parse HEAD)"
           test "$actual" = "${{ inputs.release_sha }}"
-          test "${RUNNER_NAME:-}" = "vps-ci-01"
-          test "$(id -un)" = "nora"
-          deploy() {
-            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
+          test "${RUNNER_NAME:-}" = "vds-aftergraph-ci-sentinel"
+          test "$(hostname -s)" = "vmi3517816"
+          test "$(id -un)" = "agci"
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+
           }
           deploy preflight
 
