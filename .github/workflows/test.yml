@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'frontier/**']
   pull_request:
 
 permissions:
