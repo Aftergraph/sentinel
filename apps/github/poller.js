@@ -1,4 +1,5 @@
 import { parseCommand } from "./commands.js";
+import { resolveOwnership } from "./ownership.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -78,6 +79,19 @@ export async function pollGitHubInstallationOnce({
   }
   if (typeof routePullRequest !== "function") {
     throw new Error("github poller requires routePullRequest (fail closed)");
+  }
+
+  // Single-writer election. Two instances polling the same installation post
+  // duplicate comments and duplicate check runs, and neither can see the
+  // other's local poll state. A non-owner stands down BEFORE reading or writing
+  // any state, so a standby instance is inert rather than a second writer.
+  const ownership = await resolveOwnership({
+    platform,
+    ownerSpec: opts.ownerFile,
+    instanceId: opts.instanceId,
+  });
+  if (ownership.enabled && !ownership.isOwner) {
+    return { stoodDown: true, ...ownership };
   }
 
   const path = pollStatePath(opts);

@@ -52,13 +52,28 @@ export function defaultChecksPath() {
 
 export function loadChecks(path = defaultChecksPath()) {
   if (!existsSync(path)) return {};
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw;
-  } catch {
-    return {};
+  // Fail closed, matching loadStore in store.js. Returning {} for a corrupt
+  // file would silently discard every recorded check-run id, so postCheck would
+  // create a brand-new run on each head instead of superseding the previous one
+  // and the PR would collect duplicate Sentinel checks.
+  const raw = JSON.parse(readFileSync(path, 'utf8'));
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`checks store is not an object (fail closed): ${path}`);
   }
+  return raw;
+}
+
+// The checks store is keyed by repo#pr#headSha and is rewritten in full on
+// every event, so it needs a ceiling. Entries are only useful to supersede a
+// previous run for the same PR, so keeping the most recent N is sufficient.
+export const MAX_CHECK_ENTRIES = 2000;
+export function pruneChecks(store, max = MAX_CHECK_ENTRIES) {
+  if (!store || typeof store !== 'object' || Array.isArray(store)) return store;
+  const keys = Object.keys(store);
+  if (keys.length <= max) return store;
+  // Insertion order is preserved for string keys, so the tail is oldest-first.
+  for (const key of keys.slice(0, keys.length - max)) delete store[key];
+  return store;
 }
 
 export function saveChecks(store, path = defaultChecksPath()) {
@@ -66,6 +81,7 @@ export function saveChecks(store, path = defaultChecksPath()) {
     throw new Error('saveChecks requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
+  pruneChecks(store);
   // Atomic write: write to tmp then rename to prevent corruption under concurrency.
   const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
   writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');

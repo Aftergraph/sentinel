@@ -37,6 +37,24 @@ ProtectControlGroups=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictSUIDSGID=yes
 LockPersonality=yes
+# The process runs as an unprivileged account, so its capability sets are empty
+# in practice — these are defence in depth against a future ExecStart that runs
+# privileged. CapabilityBoundingSet= (empty) is the deny-all form.
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# State and the journal are readable only by the service account; default 0022
+# leaves everything world-readable.
+UMask=0077
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+# Resource ceilings: a wedged process should fail visibly instead of taking the
+# box with it. MemoryMax is sized for a Node app with a bounded in-memory store.
+MemoryMax=512M
+TasksMax=256
+LimitNOFILE=4096
 # MemoryDenyWriteExecute is deliberately absent. V8 allocates executable memory
 # for JIT code; with the flag set, node aborts before ExecStart reaches
 # app.js — it traps in SetPermissionsOnExecutableMemoryChunk with

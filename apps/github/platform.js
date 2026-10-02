@@ -30,36 +30,83 @@ export function createAppJwt({ appId, privateKeyPem, nowSec, skewSec = 60, ttlSe
   return `${signingInput}.${b64url(sig)}`;
 }
 
-export function createPlatform({ token, appId, privateKeyPem, installationId, fetchImpl } = {}) {
+export function createPlatform({
+  token, appId, privateKeyPem, installationId, fetchImpl,
+  timeoutMs = 20_000, maxRetries = 2, retryBaseMs = 250, sleepImpl,
+} = {}) {
   const fetchFn = fetchImpl || fetch;
   const appMode = Boolean(appId && privateKeyPem);
+  const sleep = sleepImpl || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  // Statuses worth a second attempt: rate limiting and transient upstream.
+  // Everything else (401/403/404/422) is deterministic and must fail fast so
+  // callers see the real error instead of a masked one.
+  const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 
   async function rawReq(path, { method = 'GET', accept, body, auth } = {}) {
-    const res = await fetchFn(`${API}${path}`, {
-      method,
-      headers: {
-        Accept: accept || 'application/vnd.github+json',
-        Authorization: auth,
-        'X-GitHub-Api-Version': '2022-11-28',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    if (!res.ok) throw new Error(`GitHub API ${method} ${path}: ${res.status}`);
-    const ct = res.headers.get('content-type') || '';
-    return ct.includes('application/json') ? res.json() : res.text();
+    // One AbortSignal per attempt. Without it a hung connection holds the
+    // webhook open indefinitely, which is a denial-of-service on our own
+    // process rather than a GitHub problem.
+    for (let attempt = 0; ; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let res;
+      try {
+        res = await fetchFn(`${API}${path}`, {
+          method,
+          headers: {
+            Accept: accept || 'application/vnd.github+json',
+            Authorization: auth,
+            'X-GitHub-Api-Version': '2022-11-28',
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        const reason = err?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : err?.message || String(err);
+        if (attempt < maxRetries) {
+          await sleep(retryBaseMs * 2 ** attempt);
+          continue;
+        }
+        throw new Error(`GitHub API ${method} ${path}: ${reason}`);
+      }
+      clearTimeout(timer);
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        return ct.includes('application/json') ? res.json() : res.text();
+      }
+      if (RETRYABLE.has(res.status) && attempt < maxRetries) {
+        await sleep(retryBaseMs * 2 ** attempt);
+        continue;
+      }
+      const err = new Error(`GitHub API ${method} ${path}: ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
   }
 
   // Short-lived installation token cache (refreshed 60s before expiry).
   let cached = null;
-  async function installationToken() {
-    if (cached && Date.now() < cached.expiresAtMs - 60_000) return cached.token;
+  function invalidateToken() { cached = null; }
+  async function installationToken({ force = false } = {}) {
+    if (!force && cached && Date.now() < cached.expiresAtMs - 60_000) return cached.token;
     const jwt = createAppJwt({ appId, privateKeyPem });
     let id = installationId;
     if (!id) {
       const installs = await rawReq('/app/installations', { auth: `Bearer ${jwt}` });
       if (!Array.isArray(installs) || installs.length === 0 || installs[0] == null || installs[0].id == null) {
         throw new Error('GitHub App auth failed: no installations found for this App');
+      }
+      // "the app resolves the sole installation when it is absent" is only true
+      // while there IS a sole installation. Binding silently to whichever org
+      // GitHub returns first would review the wrong organisation's repos.
+      if (installs.length > 1) {
+        const names = installs.map((i) => i?.account?.login || `id:${i?.id}`).join(', ');
+        throw new Error(
+          `GitHub App auth failed: expected exactly 1 installation, found ${installs.length} (${names}). `
+          + 'Set GITHUB_INSTALLATION_ID explicitly.',
+        );
       }
       id = installs[0].id;
     }
@@ -78,7 +125,17 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
   async function req(path, opts = {}) {
     if (appMode) {
       const itoken = await installationToken();
-      return rawReq(path, { ...opts, auth: `Bearer ${itoken}` });
+      try {
+        return await rawReq(path, { ...opts, auth: `Bearer ${itoken}` });
+      } catch (err) {
+        // A cached installation token can be revoked, expire early, or hit
+        // clock skew. Retrying the same dead token 500s every webhook for up to
+        // ~59 minutes, so discard it and mint exactly one replacement.
+        if (err?.status !== 401) throw err;
+        invalidateToken();
+        const fresh = await installationToken({ force: true });
+        return rawReq(path, { ...opts, auth: `Bearer ${fresh}` });
+      }
     }
     if (!token) throw new Error('createPlatform requires { token } or { appId, privateKeyPem }');
     return rawReq(path, { ...opts, auth: `Bearer ${token}` });
@@ -95,7 +152,22 @@ export function createPlatform({ token, appId, privateKeyPem, installationId, fe
     },
     getPR: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`),
     getDiff: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`, { accept: 'application/vnd.github.v3.diff' }),
-    listComments: (repo, pr) => req(`/repos/${repo}/issues/${pr}/comments?per_page=100`),
+    listComments: async (repo, pr) => {
+      // Page through issue comments instead of reading only the first 100. The
+      // one-card-per-PR contract means findOwnComment must be able to see our
+      // own `<!-- sentinel-verdict -->` card even on a PR that has accumulated
+      // more than a page of other people's comments; otherwise a second
+      // top-level comment is posted on every review.
+      const out = [];
+      const maxPages = 10;
+      for (let page = 1; page <= maxPages; page += 1) {
+        const batch = await req(`/repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`);
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        out.push(...batch);
+        if (batch.length < 100) break;
+      }
+      return out;
+    },
     postComment: (repo, pr, body) => req(`/repos/${repo}/issues/${pr}/comments`, { method: 'POST', body: { body } }),
     patchComment: (repo, commentId, body) => req(`/repos/${repo}/issues/comments/${commentId}`, { method: 'PATCH', body: { body } }),
     listWorkflowRunsForHead: async (repo, headSha) => {
