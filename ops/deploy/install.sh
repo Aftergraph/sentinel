@@ -83,7 +83,9 @@ check_prerequisites() {
     fi
     port="$(awk -F= '$1=="PORT" {print $2; exit}' "${env_file}" 2>/dev/null || true)"
     port="${port:-8787}"
-    if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]"; then
+    # On a redeploy the running unit itself holds the port; only warn otherwise.
+    if ! systemctl is-active --quiet "${UNIT}" 2>/dev/null \
+        && command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]"; then
       echo "warning: PORT ${port} from ${env_file} is already in use; set a free port" >&2
     fi
   fi
@@ -121,9 +123,17 @@ systemctl daemon-reload
 
 # Validate the unit before enabling it, so a typo'd directive fails the install
 # instead of surfacing as a unit that silently fails to start later.
+# Fail on verify's exit status only. The previous form piped through `grep -v`
+# under `!`, which inverted the result: a clean unit (no output) made grep exit
+# 1 and failed the install, while a broken unit with any output passed.
 if command -v systemd-analyze >/dev/null 2>&1; then
-  if ! systemd-analyze verify "/etc/systemd/system/${UNIT}" 2>&1 | grep -vE 'Unknown lvalue|^$'; then
-    echo "unit ${UNIT} failed systemd-analyze verify" >&2
+  verify_rc=0
+  verify_out="$(systemd-analyze verify "/etc/systemd/system/${UNIT}" 2>&1)" || verify_rc=$?
+  if [[ -n "${verify_out}" ]]; then
+    printf '%s\n' "${verify_out}" | grep -vE '^$' >&2 || true
+  fi
+  if [[ "${verify_rc}" -ne 0 ]]; then
+    echo "unit ${UNIT} failed systemd-analyze verify (exit ${verify_rc})" >&2
     exit 1
   fi
 fi
