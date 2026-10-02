@@ -14,8 +14,9 @@ ExecStart=/usr/bin/node apps/github/app.js
 Restart=on-failure
 RestartSec=5
 
-# Fail-closed boot: app.js exits 1 without GITHUB_WEBHOOK_SECRET and GitHub
-# auth, so a bad env stops the unit instead of serving unauthenticated.
+# Fail-closed boot: app.js exits 1 without GitHub auth, and without either
+# GITHUB_WEBHOOK_SECRET or poll-only mode (SENTINEL_GITHUB_POLL=1), so a bad env
+# stops the unit instead of serving unauthenticated. Poll-only refuses webhooks.
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sentinel-github-app

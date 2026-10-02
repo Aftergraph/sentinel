@@ -56,6 +56,7 @@ export function githubAppHealth(opts = {}) {
     service: 'sentinel-github-app',
     checksEnabled: Boolean(opts.ghChecks),
     pollingEnabled: Boolean(opts.pollingEnabled),
+    webhookEnabled: opts.webhookEnabled !== false,
   };
 }
 
@@ -316,6 +317,9 @@ export function createHandler({ platform, secret, opts }) {
     try {
       if (req.method === 'GET' && req.url === '/healthz') return json(200, githubAppHealth(opts));
       if (req.method !== 'POST' || req.url !== '/webhooks/github') return json(404, { error: 'not found' });
+      // Poll-only mode: no webhook secret, so no signed delivery can be
+      // verified. Refuse every webhook instead of trusting one.
+      if (opts?.webhookEnabled === false) return json(503, { error: 'webhook disabled: no GITHUB_WEBHOOK_SECRET (poll-only mode)' });
       const raw = await readBody(req);
       if (!verifySignature(raw, req.headers['x-hub-signature-256'], secret)) {
         return json(401, { error: 'bad signature' });
@@ -357,11 +361,13 @@ export function createPlatformFromEnv(env = process.env, { fetchImpl } = {}) {
 }
 
 async function main() {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret) {
-    console.error('Missing GITHUB_WEBHOOK_SECRET (fail closed)');
+  const secret = process.env.GITHUB_WEBHOOK_SECRET || '';
+  const pollOnly = !secret && process.env.SENTINEL_GITHUB_POLL === '1';
+  if (!secret && !pollOnly) {
+    console.error('Missing GITHUB_WEBHOOK_SECRET (fail closed). Set it, or run poll-only with SENTINEL_GITHUB_POLL=1 and GitHub App credentials.');
     process.exit(1);
   }
+  if (pollOnly) console.error('sentinel github-app poll-only: no GITHUB_WEBHOOK_SECRET, webhooks are refused with 503');
   let platform;
   try {
     platform = createPlatformFromEnv(process.env);
@@ -385,6 +391,7 @@ async function main() {
       pollingEnabled: process.env.SENTINEL_GITHUB_POLL === '1',
       pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
       pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
+      webhookEnabled: Boolean(secret),
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);

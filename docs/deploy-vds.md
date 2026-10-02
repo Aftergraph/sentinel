@@ -40,10 +40,19 @@ overwrites an env file that already exists, so re-running it after a
 
 ## Fill the environment
 
-`/etc/sentinel/github-app.env` needs `GITHUB_WEBHOOK_SECRET` plus either
-`GITHUB_APP_ID` with `GITHUB_APP_KEY_FILE`, or `GITHUB_TOKEN`. The app fails
-closed: a missing secret or missing auth exits 1 and systemd reports the unit
-as failed rather than serving an unauthenticated webhook endpoint.
+`/etc/sentinel/github-app.env` needs GitHub auth (`GITHUB_APP_ID` with
+`GITHUB_APP_KEY_FILE`, or `GITHUB_TOKEN`) and one of two ingress modes:
+
+- **Webhook mode:** `GITHUB_WEBHOOK_SECRET`, equal to the secret in the GitHub
+  App's webhook settings. Signed deliveries are verified; unsigned ones get 401.
+- **Poll-only mode:** no secret, `SENTINEL_GITHUB_POLL=1` and GitHub App
+  credentials. Sentinel polls installed repos, PRs and PR comments outbound;
+  `POST /webhooks/github` always answers 503, and `/healthz` reports
+  `webhookEnabled: false`.
+
+The app still fails closed: no secret and no poll mode, or poll mode without
+App credentials, exits 1 and systemd reports the unit as failed rather than
+serving an unauthenticated webhook endpoint.
 
 ## Start and verify
 
