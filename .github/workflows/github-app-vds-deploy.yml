@@ -44,6 +44,46 @@ jobs:
           }
           deploy preflight
 
+      - name: Preflight host runtime config
+        # Fail closed BEFORE install/restart: a host without credentials or an
+        # explicit PORT would otherwise be restarted into a crash loop
+        # (observed on runs 36944642353..36977384674). Values are never printed.
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+          }
+          host="$(hostname -s)"
+          env_file=/etc/sentinel/github-app.env
+          if ! run_root test -r "$env_file"; then
+            echo "::error::${env_file} missing on ${host}; refusing to install or restart"
+            exit 1
+          fi
+          get() {
+            run_root awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { print v }' "$env_file" | tr -d '[:space:]'
+          }
+          port="$(get PORT)"
+          if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+            echo "::error::PORT is not set in ${env_file} on ${host}; refusing to install or restart"
+            exit 1
+          fi
+          app_id="$(get GITHUB_APP_ID)"
+          key_file="$(get GITHUB_APP_KEY_FILE)"
+          if [ -n "$app_id" ] && [ -n "$key_file" ]; then
+            if ! run_root test -s "$key_file"; then
+              echo "::error::GITHUB_APP_KEY_FILE (${key_file}) is missing or empty on ${host}; refusing to install or restart"
+              exit 1
+            fi
+            auth=app
+          elif [ -n "$(get GITHUB_TOKEN)" ]; then
+            auth=token
+          else
+            echo "::error::no GitHub auth configured in ${env_file} on ${host}; refusing to install or restart"
+            exit 1
+          fi
+          echo "preflight ok: host=${host} port=${port} auth=${auth}"
+
       - name: Verify Sentinel before deployment
         shell: bash
         run: |
