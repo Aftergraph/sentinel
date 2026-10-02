@@ -1,6 +1,0 @@
-{
-  "owner": "vds",
-  "updatedAt": "2026-10-02T00:00:00Z",
-  "reason": "vds runs the long-lived sentinel-github-app instance (uptime since 2026-10-02T03:36 CEST) alongside the sentinel-bio/sentinel-fo/sentinel-gate service family, and holds ~100x the receipt history of the vps instance. The vps instance was a deploy target on 2026-10-02 and is expected to stand down.",
-  "note": "Set SENTINEL_OWNER_FILE=Aftergraph/sentinel:sentinel-owner.json@main on every instance. Changing \"owner\" moves the review loop; every instance re-reads this file before each poll cycle."
-}
