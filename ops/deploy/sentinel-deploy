@@ -55,6 +55,11 @@ case "${verb}" in
     # /opt/sentinel is 0750 sentinel:sentinel, so the runner cannot read it directly.
     sha256sum /opt/sentinel/lib/rulepack.js /opt/sentinel/lib/fihim-operator-deployment-verifier.mjs
     ;;
+  webhook-check|webhook-rotate)
+    [[ $# -eq 0 ]] || die "${verb} takes no arguments"
+    # Secret is generated, stored and registered on this host; never printed.
+    node /opt/sentinel/bin/sentinel-github-webhook-secret.mjs "${verb#webhook-}" "${ENV_FILE}"
+    ;;
   diagnose)
     [[ $# -eq 0 ]] || die "diagnose takes no arguments"
     systemctl status "${UNIT}" --no-pager -n 0 || true
@@ -64,6 +69,6 @@ case "${verb}" in
       | grep -v 'sentinel github poll ' | tail -n 20 || true
     ;;
   *)
-    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|diagnose)"
+    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|diagnose)"
     ;;
 esac
