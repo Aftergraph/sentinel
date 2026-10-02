@@ -11,6 +11,12 @@ on:
         description: Enter DEPLOY_SENTINEL_GITHUB_APP
         required: true
         type: string
+      webhook_secret:
+        description: "After deploy: keep the webhook secret, check the App webhook config, or rotate the secret on the host"
+        required: false
+        default: keep
+        type: choice
+        options: [keep, check, rotate]
 
 permissions:
   contents: read
@@ -93,6 +99,40 @@ jobs:
           test "$checkout_verifier_hash" = "$deployed_verifier_hash"
 
           printf '{"release_sha":"%s","service_active":true,"health_http":"200","rulepack_sha256":"sha256:%s","fihim_verifier_sha256":"sha256:%s"}\n'             "${{ inputs.release_sha }}" "$deployed_hash" "$deployed_verifier_hash"             > "${{ runner.temp }}/sentinel-vds-deploy-receipt.json"
+
+      - name: Webhook secret (check or rotate on the host)
+        if: inputs.webhook_secret == 'check' || inputs.webhook_secret == 'rotate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy() {
+            if [ "$(id -u)" -eq 0 ]; then /usr/local/sbin/sentinel-deploy "$@"; else sudo -n /usr/local/sbin/sentinel-deploy "$@"; fi
+          }
+          if [ "${{ inputs.webhook_secret }}" = "check" ]; then
+            deploy webhook-check
+            exit 0
+          fi
+          # Secret is generated, registered on the App and stored on this host; never printed.
+          deploy webhook-rotate
+          deploy restart
+
+          port="$(deploy port)"; port="${port:-8787}"
+          [[ "$port" =~ ^[0-9]+$ ]]
+          base="http://sentinel-loopback.invalid:${port}"
+          r=(--noproxy '*' --resolve "sentinel-loopback.invalid:${port}:127.0.0.1" --max-time 2)
+          code=000
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS "${r[@]}" -o "${{ runner.temp }}/sentinel-health-webhook.json" -w '%{http_code}' "$base/healthz" || true)"
+            [ "$code" = "200" ] && break
+            sleep 0.5
+          done
+          test "$code" = "200"
+          cat "${{ runner.temp }}/sentinel-health-webhook.json"; echo
+          grep -q '"webhookEnabled":true' "${{ runner.temp }}/sentinel-health-webhook.json"
+          # An unsigned delivery must now be refused with 401 (503 in poll-only mode).
+          unsigned="$(curl -sS "${r[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "$base/webhooks/github" || true)"
+          echo "unsigned_post_http=$unsigned"
+          test "$unsigned" = "401"
 
       - name: Service diagnostics on failure
         if: failure()

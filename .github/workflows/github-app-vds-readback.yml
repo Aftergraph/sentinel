@@ -6,6 +6,7 @@ on:
       - "apps/github/**"
       - "ops/deploy/**"
       - ".github/workflows/github-app-vds-readback.yml"
+      - ".github/workflows/github-app-vds-deploy.yml"
   workflow_dispatch:
 
 permissions:
