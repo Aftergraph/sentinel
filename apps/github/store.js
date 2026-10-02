@@ -201,13 +201,14 @@ function resolvePrPath(opts) {
 
 export function loadPrStore(path = defaultPrStorePath()) {
   if (!existsSync(path)) return {};
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw;
-  } catch {
-    return {};
+  // Fail closed, matching loadStore: silently returning {} for a corrupt file
+  // would discard every recorded PR head, so freshness/delta checks restart
+  // from scratch and stale verdicts get re-issued as fresh.
+  const raw = JSON.parse(readFileSync(path, 'utf8'));
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`pr store is not an object (fail closed): ${path}`);
   }
+  return raw;
 }
 
 export function savePrStore(store, path = defaultPrStorePath()) {
@@ -215,7 +216,11 @@ export function savePrStore(store, path = defaultPrStorePath()) {
     throw new Error('savePrStore requires a store object');
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(store, null, 2) + '\n');
+  // tmp + rename, same as saveStore: an in-place write truncated by a crash or
+  // ENOSPC leaves a half-written file that then fails closed forever.
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, path);
   return store;
 }
 

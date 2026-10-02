@@ -308,12 +308,22 @@ function noteDelivery(id) {
   return true;
 }
 
+// A delivery counts as "seen" only once it has actually been handled. GitHub
+// retries a failed delivery with the SAME X-GitHub-Delivery id, so recording the
+// id before processing and never rolling it back makes the retry match the
+// dedupe branch, return 200, and mark a never-reviewed PR as delivered. Roll the
+// id back on any failure so the retry is genuinely retried.
+function forgetDelivery(id) {
+  if (id) seenDeliveries.delete(id);
+}
+
 export function createHandler({ platform, secret, opts }) {
   return async (req, res) => {
     const json = (code, obj) => {
       res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
       res.end(JSON.stringify(obj));
     };
+    let notedDelivery = null;
     try {
       if (req.method === 'GET' && req.url === '/healthz') return json(200, githubAppHealth(opts));
       if (req.method !== 'POST' || req.url !== '/webhooks/github') return json(404, { error: 'not found' });
@@ -326,13 +336,17 @@ export function createHandler({ platform, secret, opts }) {
       }
       const event = req.headers['x-github-event'];
       const delivery = req.headers['x-github-delivery'];
-      if (typeof delivery === 'string' && delivery.length > 0 && !noteDelivery(delivery)) {
-        return json(200, { ok: true, deduped: true, action: 'duplicate-delivery' });
+      if (typeof delivery === 'string' && delivery.length > 0) {
+        if (!noteDelivery(delivery)) {
+          return json(200, { ok: true, deduped: true, action: 'duplicate-delivery' });
+        }
+        notedDelivery = delivery;
       }
       const payload = JSON.parse(raw.toString('utf8'));
       const out = await routeEvent({ event, payload, platform, opts });
       return json(200, { ok: true, ...out });
     } catch (err) {
+      forgetDelivery(notedDelivery);
       return json(500, { error: err.message });
     }
   };
@@ -375,14 +389,14 @@ async function main() {
     console.error(`${err.message} (fail closed)`);
     process.exit(1);
   }
-  const { config } = loadConfig(process.env.SENTINEL_CONFIG || undefined);
+  const { config, configHash } = loadConfig(process.env.SENTINEL_CONFIG || undefined);
   const handler = createHandler({
     platform,
     secret,
     opts: {
       rulePack: config.rulePack || undefined,
       exclude: config.exclude,
-      configHash: null,
+      configHash,
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
@@ -395,7 +409,18 @@ async function main() {
     },
   });
   const port = parseInt(process.env.PORT || '8787', 10);
-  createServer(handler).listen(port, () => console.error(`sentinel github-app listening on :${port}`));
+  // Bind loopback by default. listen(port) with no host binds 0.0.0.0/::, which
+  // contradicts the documented model in ops/deploy/github-app.env.example
+  // ("Cloudflare Tunnel forwards to this port on 127.0.0.1; no public port
+  // opens"). SENTINEL_BIND_HOST is the only way to widen it, so the default
+  // cannot silently regress into an internet-facing listener.
+  const host = process.env.SENTINEL_BIND_HOST || '127.0.0.1';
+  const server = createServer(handler);
+  server.on('error', (err) => {
+    console.error(`sentinel github-app listener error: ${err.message} (fail closed)`);
+    process.exit(1);
+  });
+  server.listen(port, host, () => console.error(`sentinel github-app listening on ${host}:${port}`));
 
   if (process.env.SENTINEL_GITHUB_POLL === '1') {
     if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_KEY_FILE) {
@@ -406,7 +431,7 @@ async function main() {
     const pollOpts = {
       rulePack: config.rulePack || undefined,
       exclude: config.exclude,
-      configHash: null,
+      configHash,
       ledgerPath: process.env.SENTINEL_LEDGER || undefined,
       memoryPath: process.env.SENTINEL_MEMORY || undefined,
       storePath: process.env.SENTINEL_GITHUB_STORE || undefined,
@@ -428,4 +453,21 @@ async function main() {
 }
 
 const invoked = process.argv[1] && process.argv[1].endsWith('apps/github/app.js');
-if (invoked) main();
+if (invoked) {
+  // main() rejects on a malformed SENTINEL_CONFIG (loadConfig sits outside the
+  // auth try). Without these handlers that surfaces as a bare stack trace and a
+  // non-deterministic exit code, bypassing the deliberate fail-closed
+  // console.error + exit(1) used everywhere else in this file.
+  process.on('unhandledRejection', (err) => {
+    console.error(`sentinel github-app unhandled rejection: ${err?.message || err} (fail closed)`);
+    process.exit(1);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error(`sentinel github-app uncaught exception: ${err?.message || err} (fail closed)`);
+    process.exit(1);
+  });
+  main().catch((err) => {
+    console.error(`${err?.message || err} (fail closed)`);
+    process.exit(1);
+  });
+}
