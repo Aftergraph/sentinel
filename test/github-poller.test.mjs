@@ -125,3 +125,42 @@ test("poller routes new @sentinel comments once, never replays history", async (
     assert.equal(routed.length, 2, "same comment never routed twice");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("poll repos file widens a non-empty env allowlist",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"sentinel-poller-"));
+  try{
+    const platform={...basicPlatform(),async getFileContent(repo,path,ref){
+      assert.equal(repo,"Aftergraph/sentinel");assert.equal(path,"ops/deploy/poll-repos.json");assert.equal(ref,"main");
+      return JSON.stringify({repos:["Aftergraph/other","not a repo"]});
+    }};
+    const seen=[];
+    const opts={pollStatePath:join(dir,"poll.json"),pollRepos:["Aftergraph/sentinel"],pollReposFile:"Aftergraph/sentinel:ops/deploy/poll-repos.json@main"};
+    const res=await pollGitHubInstallationOnce({platform,opts,routePullRequest:async(e)=>{seen.push(e);return {handled:true};}});
+    assert.equal(res.repositories,2);
+    assert.deepEqual(res.extraPollRepos,["Aftergraph/other"]);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test("unreadable poll repos file falls back to the env allowlist only",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"sentinel-poller-"));
+  try{
+    const platform={...basicPlatform(),async getFileContent(){throw new Error("404");}};
+    const opts={pollStatePath:join(dir,"poll.json"),pollRepos:["Aftergraph/sentinel"],pollReposFile:"Aftergraph/sentinel:ops/deploy/poll-repos.json@main"};
+    const res=await pollGitHubInstallationOnce({platform,opts,routePullRequest:async()=>({handled:true})});
+    assert.equal(res.repositories,1);
+    assert.deepEqual(res.extraPollRepos,[]);
+    assert.match(res.extraPollReposReason,/env allowlist only/);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test("poll repos file is ignored when the env allowlist is empty",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"sentinel-poller-"));
+  try{
+    let reads=0;
+    const platform={...basicPlatform(),async getFileContent(){reads+=1;return "{}";}};
+    const opts={pollStatePath:join(dir,"poll.json"),pollRepos:[],pollReposFile:"Aftergraph/sentinel:ops/deploy/poll-repos.json@main"};
+    const res=await pollGitHubInstallationOnce({platform,opts,routePullRequest:async()=>({handled:true})});
+    assert.equal(res.repositories,2);
+    assert.equal(reads,0);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});
