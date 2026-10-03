@@ -7,7 +7,7 @@
   "claims": [
     "Scenario pack and loopback harness exercise Lume's streaming backend proxy risk surface",
     "Harness is portable to Aftergraph/Lume unchanged and runs zero-dependency on Node >=20",
-    "Runner proves detection of five violation classes via sabotaged reference proxy"
+    "Runner proves detection of eight violation classes via sabotaged reference proxy"
   ],
   "non_claims": [
     "Not a production readiness verdict for Aftergraph/Lume",

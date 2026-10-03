@@ -49,6 +49,9 @@ interface and never makes outbound calls beyond the loopback upstream.
 | `cors-boundary` | no wildcard origin reflection with credentials; explicit allowlist |
 | `upstream-failure` | upstream 5xx/timeouts surface as explicit errors, not empty 200 streams |
 | `content-type` | chat stream responses declare an event-stream/JSON content type |
+| `prompt-injection` | injection directives in upstream output must not gain authority via response headers |
+| `rate-limit-bypass` | anonymous/unbounded requests must not leak upstream credentials |
+| `session-token-handling` | client session tokens must not leak into responses or upstream state echo |
 
 Fail-closed: any scenario that cannot reach a conclusion (connection refused,
 ambiguous bytes) is recorded INCONCLUSIVE and the run exits non-zero.
