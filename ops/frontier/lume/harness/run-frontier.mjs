@@ -23,6 +23,14 @@ const targetIdx = args.indexOf('--target');
 const target = targetIdx !== -1 ? args[targetIdx + 1] : null;
 const selfTest = args.includes('--self-test');
 
+if (!selfTest && !target) {
+  console.error('usage: run-frontier.mjs (--self-test [--sabotage=<class>...] | --target http://127.0.0.1:<port>)');
+  console.error('  --self-test              start mock upstream + reference proxy on loopback and run all scenarios');
+  console.error('  --sabotage=<class>       inject one violation class (repeatable); run fails closed when detected');
+  console.error('  --target <loopback-url>  probe a Lume proxy under test (loopback only)');
+  process.exit(2);
+}
+
 const URL_BOUND = /^https?:\/\/127\.0\.0\.1(?::\d+)?$/;
 if (target && !URL_BOUND.test(target)) {
   console.error('refusing non-loopback target (sandbox boundary): ' + target);
