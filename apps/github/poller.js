@@ -1,5 +1,5 @@
 import { parseCommand } from "./commands.js";
-import { resolveOwnership } from "./ownership.js";
+import { parseOwnerSpec, resolveOwnership } from "./ownership.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -60,10 +60,39 @@ function economicFingerprint(required, aggregate, evidenceVerification) {
   });
 }
 
-function allowedRepo(repo, opts) {
+function allowedRepo(repo, opts, extra = []) {
   const allow = opts.pollRepos;
   if (!Array.isArray(allow) || allow.length === 0) return true;
-  return allow.includes(repo);
+  return allow.includes(repo) || extra.includes(repo);
+}
+
+// Repo-managed widening of the env allowlist. SENTINEL_GITHUB_POLL_REPOS lives
+// in a root-owned env file on the host, so adding a repository used to need a
+// root edit plus a restart. The file named by opts.pollReposFile (same
+// "owner/repo:path@ref" spec as the owner file) is read through the App each
+// cycle, so a reviewed PR to that file widens the set instead.
+//
+// It can only ADD to a non-empty env allowlist: an empty env list already
+// means "every installed repo", and an unreadable or malformed file falls back
+// to the env list alone (narrower, never wider).
+export async function resolveExtraPollRepos({ platform, spec, envRepos } = {}) {
+  if (!Array.isArray(envRepos) || envRepos.length === 0) return { repos: [], reason: "env allowlist empty; all installed repos allowed" };
+  const parsed = parseOwnerSpec(spec);
+  if (!parsed) return { repos: [], reason: "no poll repos file configured" };
+  if (!platform || typeof platform.getFileContent !== "function") {
+    return { repos: [], reason: "platform cannot read the poll repos file" };
+  }
+  try {
+    const json = JSON.parse(await platform.getFileContent(parsed.repo, parsed.path, parsed.ref));
+    const list = Array.isArray(json?.repos) ? json.repos : null;
+    if (!list) return { repos: [], reason: "poll repos file has no \"repos\" array" };
+    const repos = list
+      .filter((r) => typeof r === "string" && /^[\w.-]+\/[\w.-]+$/.test(r.trim()))
+      .map((r) => r.trim());
+    return { repos, reason: `read ${repos.length} repos from ${parsed.repo}:${parsed.path}@${parsed.ref}` };
+  } catch (err) {
+    return { repos: [], reason: `cannot read poll repos file (env allowlist only): ${err?.message || err}` };
+  }
 }
 
 export async function pollGitHubInstallationOnce({
@@ -96,6 +125,11 @@ export async function pollGitHubInstallationOnce({
 
   const path = pollStatePath(opts);
   const state = loadState(path);
+  const extra = await resolveExtraPollRepos({
+    platform,
+    spec: opts.pollReposFile,
+    envRepos: opts.pollRepos,
+  });
   const repositories = await platform.listInstallationRepositories();
   const summary = {
     repositories: 0,
@@ -104,11 +138,13 @@ export async function pollGitHubInstallationOnce({
     evidenceChecks: 0,
     pendingEvidence: 0,
     errors: [],
+    extraPollRepos: extra.repos,
+    extraPollReposReason: extra.reason,
   };
 
   for (const repoInfo of repositories) {
     const repo = repoInfo?.full_name;
-    if (typeof repo !== "string" || !repo || !allowedRepo(repo, opts)) continue;
+    if (typeof repo !== "string" || !repo || !allowedRepo(repo, opts, extra.repos)) continue;
     summary.repositories += 1;
 
     let prs;

@@ -1,0 +1,6 @@
+{
+  "repos": [
+    "Aftergraph/Lume"
+  ],
+  "note": "Repos the polling Sentinel reviews in addition to SENTINEL_GITHUB_POLL_REPOS on the host. Only adds to a non-empty env allowlist; read through the App every poll cycle, so a merged PR here takes effect without a root edit or restart. Unreadable or malformed means env allowlist only."
+}

@@ -440,6 +440,9 @@ async function main() {
       pollStatePath: process.env.SENTINEL_GITHUB_POLL_STATE || undefined,
       pollRepos: String(process.env.SENTINEL_GITHUB_POLL_REPOS || '').split(',').map((x) => x.trim()).filter(Boolean),
       ownerFile: process.env.SENTINEL_OWNER_FILE || undefined,
+      // Repo-managed additions to SENTINEL_GITHUB_POLL_REPOS. Set to an empty
+      // string to disable; unset uses the tracked file in this repo.
+      pollReposFile: process.env.SENTINEL_POLL_REPOS_FILE ?? 'Aftergraph/sentinel:ops/deploy/poll-repos.json@main',
       instanceId: process.env.SENTINEL_INSTANCE_ID || undefined,
     };
     startGitHubInstallationPoller({
