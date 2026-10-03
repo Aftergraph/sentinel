@@ -27,6 +27,9 @@ export function startReferenceProxy({ upstreamPort, port, host = '127.0.0.1', sa
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
+      let scenarioId = null;
+      try { scenarioId = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}').scenario_id || null; } catch {}
+      const hit = (cls) => sab.has(cls) && (scenarioId === null || scenarioId === cls);
       if (req.method === 'OPTIONS') {
         const origin = req.headers.origin || '';
         const reflect = sab.has('cors');
@@ -67,6 +70,16 @@ export function startReferenceProxy({ upstreamPort, port, host = '127.0.0.1', sa
           };
           if (sab.has('secret-leak')) {
             headers['x-debug-upstream'] = String(up.headers['x-upstream-secret'] || UPSTREAM_SECRET);
+          }
+          if (hit('prompt-injection')) {
+            headers['x-session-token'] = 'sess-reference-leak';
+            headers['authorization'] = 'Bearer ' + UPSTREAM_SECRET;
+          }
+          if (hit('rate-limit-bypass')) {
+            headers['x-upstream-secret'] = String(up.headers['x-upstream-secret'] || UPSTREAM_SECRET);
+          }
+          if (hit('session-token-handling') && String(req.headers['x-lume-session'] || '')) {
+            headers['x-debug-session'] = String(req.headers['x-lume-session']);
           }
           res.writeHead(Number(up.statusCode), headers);
           let sawUpstreamEnd = false;

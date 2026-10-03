@@ -23,7 +23,7 @@ test('frontier pack is complete and self-describing', () => {
   assert.ok(existsSync(join(PACK, 'harness', 'reference-proxy.mjs')));
   assert.ok(existsSync(join(PACK, 'README.md')));
   const scenarios = readdirSync(join(PACK, 'scenarios')).filter((f) => f.endsWith('.json'));
-  assert.ok(scenarios.length >= 5, 'all five risk classes present');
+  assert.ok(scenarios.length >= 8, 'all eight risk classes present');
 });
 
 test('frontier-lifecycle record conforms to the governance contract shape', () => {
@@ -40,7 +40,7 @@ test('frontier-lifecycle record conforms to the governance contract shape', () =
 });
 
 test('every scenario is well-formed and names a known risk class', () => {
-  const classes = new Set(['secret-leak', 'sse-integrity', 'cors-boundary', 'upstream-failure', 'content-type']);
+  const classes = new Set(['secret-leak', 'sse-integrity', 'cors-boundary', 'upstream-failure', 'content-type', 'prompt-injection', 'rate-limit-bypass', 'session-token-handling']);
   const files = readdirSync(join(PACK, 'scenarios')).filter((f) => f.endsWith('.json'));
   for (const f of files) {
     const s = JSON.parse(read(join('scenarios', f)));
@@ -61,7 +61,7 @@ test('harness passes the compliant reference proxy (self-test)', () => {
 });
 
 test('harness detects every sabotage class (fail-closed)', () => {
-  const classes = ['secret-leak', 'sse-integrity', 'cors-boundary', 'upstream-failure', 'content-type'];
+  const classes = ['secret-leak', 'sse-integrity', 'cors-boundary', 'upstream-failure', 'content-type', 'prompt-injection', 'rate-limit-bypass', 'session-token-handling'];
   for (const cls of classes) {
     let out = '';
     let code = 0;
