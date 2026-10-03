@@ -1,0 +1,32 @@
+{
+  "schema": "frontier-lifecycle/1.0",
+  "candidate_id": "lume-streaming-proxy-frontier-env",
+  "subject_class": "capability-family",
+  "lifecycle": "frontier",
+  "canonical_owner_refs": ["Aftergraph/Lume"],
+  "claims": [
+    "Scenario pack and loopback harness exercise Lume's streaming backend proxy risk surface",
+    "Harness is portable to Aftergraph/Lume unchanged and runs zero-dependency on Node >=20",
+    "Runner proves detection of eight violation classes via sabotaged reference proxy"
+  ],
+  "non_claims": [
+    "Not a production readiness verdict for Aftergraph/Lume",
+    "Not authority of any kind; carries_authority is false",
+    "No claim about Lume internals; the product repo was not reachable by the authoring session"
+  ],
+  "contract_refs": [
+    "after-graph-governance/docs/contracts/frontier-lifecycle/1.0.json"
+  ],
+  "evidence_refs": [
+    "sentinel/test/lume-frontier.test.mjs",
+    "sentinel/ops/frontier/lume/harness/run-frontier.mjs --self-test",
+    "sentinel/ops/frontier/lume/harness/run-frontier.mjs --self-test --sabotage (expected FAIL exit 1)"
+  ],
+  "verifier_refs": [
+    "node --test test/lume-frontier.test.mjs (sentinel)"
+  ],
+  "gate_ref": null,
+  "registry_evidence_ref": null,
+  "self_promoted": false,
+  "carries_authority": false
+}
