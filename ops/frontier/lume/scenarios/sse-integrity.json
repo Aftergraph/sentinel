@@ -1,0 +1,23 @@
+{
+  "id": "sse-integrity",
+  "risk_class": "sse-integrity",
+  "description": "Streams must terminate cleanly; truncated upstream output must surface, not pass silently.",
+  "probe": {
+    "method": "POST",
+    "path": "/v1/chat",
+    "body": { "messages": [{ "role": "user", "content": "tell me a story" }] }
+  },
+  "upstream_replay": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "body_chunks": [
+      "data: {\"delta\":\"Once\"}\n\n",
+      "data: {\"delta\":\" upon\"}\n\n"
+    ],
+    "truncate": true
+  },
+  "expect": {
+    "response_is_sse_or_error": true,
+    "must_not_silently_complete": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "content-type",
+  "risk_class": "content-type",
+  "description": "Chat stream responses must declare an event-stream or JSON content type.",
+  "probe": {
+    "method": "POST",
+    "path": "/v1/chat",
+    "body": { "messages": [{ "role": "user", "content": "hi" }] }
+  },
+  "upstream_replay": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "body_chunks": ["data: {\"delta\":\"hi\"}\n\n", "\n"]
+  },
+  "expect": {
+    "content_type_matches": ["text/event-stream", "application/json"]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "cors-boundary",
+  "risk_class": "cors-boundary",
+  "description": "No wildcard/reflective CORS origin; explicit allowlist only.",
+  "probe": {
+    "method": "OPTIONS",
+    "path": "/v1/chat",
+    "headers": { "origin": "https://evil.example.com" }
+  },
+  "upstream_replay": {
+    "status": 204,
+    "headers": {},
+    "body_chunks": []
+  },
+  "expect": {
+    "must_not_reflect_origin": "https://evil.example.com",
+    "must_not_send": ["access-control-allow-origin: *"]
+  }
+}
