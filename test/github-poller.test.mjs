@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pollGitHubInstallationOnce } from "../apps/github/poller.js";
+import { pollGitHubInstallationOnce, scanLumeMainOnce } from "../apps/github/poller.js";
 
 const H="a".repeat(40);
 const B="b".repeat(40);
@@ -163,4 +163,143 @@ test("poll repos file is ignored when the env allowlist is empty",async()=>{
     assert.equal(res.repositories,2);
     assert.equal(reads,0);
   }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+
+function lumePolicy() {
+  return {
+    apiVersion: "sentinel.aftergraph/v1alpha1",
+    kind: "AutonomousMaintainerPolicy",
+    metadata: { name: "lume" },
+    spec: {
+      repo: "Aftergraph/Lume",
+      enabled: true,
+      allowedSeverities: ["reliability", "correctness", "performance", "style"],
+      maxRisk: "medium",
+      allowedPaths: ["src/**", "server/**", "tests/**"],
+      protectedPaths: [".github/workflows/**", "server/identity.js"],
+      requireExactHead: true,
+      requireSentinelVerification: true,
+      requireIndependentChecks: ["CI"],
+      allowAutoMerge: true,
+    },
+  };
+}
+
+function lumeMainPlatform({ currentSha = "d".repeat(40), diffText, issues = [], createIssue } = {}) {
+  return {
+    async getBranch(repo, branch) {
+      assert.equal(repo, "Aftergraph/Lume");
+      assert.equal(branch, "main");
+      return { commit: { sha: currentSha } };
+    },
+    async getCompareDiff(repo, base, head) {
+      assert.equal(repo, "Aftergraph/Lume");
+      assert.match(base, /^[0-9a-f]{40}$/);
+      assert.equal(head, currentSha);
+      return diffText ?? [
+        "diff --git a/src/x.js b/src/x.js",
+        "--- a/src/x.js",
+        "+++ b/src/x.js",
+        "@@ -1 +1 @@",
+        "-if (a === b) {}",
+        "+if (a == b) {}",
+        "",
+      ].join("\n");
+    },
+    async getFileContent(repo, path, ref) {
+      assert.equal(repo, "Aftergraph/sentinel");
+      assert.equal(path, "ops/maintainers/lume.json");
+      assert.equal(ref, "main");
+      return JSON.stringify(lumePolicy());
+    },
+    async listOpenIssues(repo) {
+      assert.equal(repo, "Aftergraph/Lume");
+      return issues;
+    },
+    async createIssue(repo, issue) {
+      assert.equal(repo, "Aftergraph/Lume");
+      if (createIssue) return createIssue(issue);
+      issues.push({ ...issue, number: issues.length + 1 });
+      return issues.at(-1);
+    },
+  };
+}
+
+test("Lume main maintainer establishes a baseline without dispatching work", async () => {
+  const state = {};
+  const summary = {};
+  const platform = lumeMainPlatform();
+  const out = await scanLumeMainOnce({ platform, state, summary });
+  assert.equal(out.baseline, true);
+  assert.equal(out.emitted, 0);
+  assert.equal(state["main:Aftergraph/Lume"].sha, "d".repeat(40));
+  assert.equal(summary.maintainerBaseline, "d".repeat(40));
+});
+
+test("Lume main maintainer emits one exact-head remediation task and deduplicates it", async () => {
+  const oldSha = "a".repeat(40);
+  const newSha = "d".repeat(40);
+  const state = { "main:Aftergraph/Lume": { sha: oldSha } };
+  const summary = {};
+  const issues = [];
+  const platform = lumeMainPlatform({ currentSha: newSha, issues });
+
+  const first = await scanLumeMainOnce({ platform, state, summary });
+  assert.ok(first.eligible >= 1, "expected at least one eligible correctness finding");
+  assert.equal(first.emitted, 1);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].title, /^\[sentinel-remediate\]/);
+  const task = JSON.parse(issues[0].body);
+  assert.equal(task.repo, "Aftergraph/Lume");
+  assert.equal(task.baseSha, newSha);
+  assert.equal(task.sentinelVerified, true);
+  assert.equal(task.autoMergeEligible, true);
+  assert.deepEqual(task.paths, ["src/x.js"]);
+  assert.equal(state["main:Aftergraph/Lume"].sha, newSha);
+
+  const second = await scanLumeMainOnce({ platform, state, summary });
+  assert.equal(second.unchanged, true);
+  assert.equal(issues.length, 1);
+});
+
+test("Lume main maintainer does not dispatch protected workflow changes", async () => {
+  const state = { "main:Aftergraph/Lume": { sha: "a".repeat(40) } };
+  const summary = {};
+  const issues = [];
+  const diffText = [
+    "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml",
+    "--- a/.github/workflows/ci.yml",
+    "+++ b/.github/workflows/ci.yml",
+    "@@ -1 +1 @@",
+    "-if (a === b) {}",
+    "+if (a == b) {}",
+    "",
+  ].join("\n");
+  const out = await scanLumeMainOnce({
+    platform: lumeMainPlatform({ currentSha: "e".repeat(40), diffText, issues }),
+    state,
+    summary,
+  });
+  assert.equal(out.emitted, 0);
+  assert.equal(issues.length, 0);
+});
+
+test("Lume main maintainer never advances its checkpoint when task creation fails", async () => {
+  const oldSha = "a".repeat(40);
+  const newSha = "f".repeat(40);
+  const state = { "main:Aftergraph/Lume": { sha: oldSha } };
+  const summary = {};
+  await assert.rejects(
+    () => scanLumeMainOnce({
+      platform: lumeMainPlatform({
+        currentSha: newSha,
+        createIssue: async () => { throw new Error("issue transport down"); },
+      }),
+      state,
+      summary,
+    }),
+    /issue transport down/,
+  );
+  assert.equal(state["main:Aftergraph/Lume"].sha, oldSha);
 });
