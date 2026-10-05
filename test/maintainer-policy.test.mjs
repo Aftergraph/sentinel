@@ -95,3 +95,31 @@ test('unknown policy values throw instead of weakening autonomy', () => {
   malformed.spec.maxRisk = 'whatever';
   assert.throws(() => parseMaintainerPolicy(malformed), /unknown maxRisk/);
 });
+
+
+test('path globs are anchored and distinguish one-segment from recursive matches', () => {
+  const recursive = evaluateMaintainerPolicy(base, {
+    repo: 'Aftergraph/Lume',
+    severity: 'correctness',
+    risk: 'low',
+    paths: ['src/features/agent/runtime.ts'],
+    exactHead: true,
+    sentinelVerified: true,
+    passedChecks: ['CI', 'Sentinel gate'],
+  });
+  assert.equal(recursive.action, ACTIONS.REMEDIATE_PR);
+
+  const escaped = structuredClone(base);
+  escaped.spec.allowedPaths = ['src/*.ts'];
+  const nested = evaluateMaintainerPolicy(escaped, {
+    repo: 'Aftergraph/Lume',
+    severity: 'correctness',
+    risk: 'low',
+    paths: ['src/features/runtime.ts'],
+    exactHead: true,
+    sentinelVerified: true,
+    passedChecks: ['CI', 'Sentinel gate'],
+  });
+  assert.equal(nested.action, ACTIONS.PROPOSE);
+  assert.equal(nested.reason, 'path-outside-autonomy');
+});
