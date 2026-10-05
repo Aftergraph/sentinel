@@ -12,6 +12,8 @@ import {
   economicEvidenceEnvelopePaths,
   verifyEconomicEvidenceEnvelope,
 } from "./economic-evidence.js";
+import { analyzeDiff } from "../../lib/review.js";
+import { buildLumeRemediationTask, issueForLumeRemediationTask } from "../../lib/lume-maintainer.js";
 
 export function defaultPollStatePath() {
   return join(homedir(), ".sentinel", "github-poll-state.json");
@@ -64,6 +66,79 @@ function allowedRepo(repo, opts, extra = []) {
   const allow = opts.pollRepos;
   if (!Array.isArray(allow) || allow.length === 0) return true;
   return allow.includes(repo) || extra.includes(repo);
+}
+
+const LUME_REPO = "Aftergraph/Lume";
+const LUME_POLICY_REPO = "Aftergraph/sentinel";
+const LUME_POLICY_PATH = "ops/maintainers/lume.json";
+const LUME_POLICY_REF = "main";
+
+function mainStateKey(repo) {
+  return "main:" + repo;
+}
+
+export async function scanLumeMainOnce({ platform, state, summary } = {}) {
+  if (!platform || typeof platform.getBranch !== "function"
+    || typeof platform.getCompareDiff !== "function"
+    || typeof platform.getFileContent !== "function"
+    || typeof platform.listOpenIssues !== "function"
+    || typeof platform.createIssue !== "function") {
+    throw new Error("lume maintainer scan requires branch/compare/file/issues transport (fail closed)");
+  }
+
+  const branch = await platform.getBranch(LUME_REPO, "main");
+  const currentSha = branch?.commit?.sha;
+  if (typeof currentSha !== "string" || !/^[0-9a-f]{40}$/i.test(currentSha)) {
+    throw new Error("lume main branch returned invalid commit SHA");
+  }
+
+  const key = mainStateKey(LUME_REPO);
+  const prior = state[key];
+  if (!prior?.sha) {
+    state[key] = { sha: currentSha, observedAt: new Date().toISOString() };
+    summary.maintainerBaseline = currentSha;
+    return { baseline: true, sha: currentSha, emitted: 0 };
+  }
+  if (prior.sha === currentSha) return { baseline: false, sha: currentSha, emitted: 0, unchanged: true };
+
+  const diffText = await platform.getCompareDiff(LUME_REPO, prior.sha, currentSha);
+  if (typeof diffText !== "string") throw new Error("lume compare diff was not text");
+  if (diffText.length > 5 * 1024 * 1024) throw new Error("lume compare diff exceeds 5 MiB maintainer bound");
+
+  const policy = JSON.parse(await platform.getFileContent(
+    LUME_POLICY_REPO,
+    LUME_POLICY_PATH,
+    LUME_POLICY_REF,
+  ));
+
+  const { result } = await analyzeDiff({
+    diffText,
+    headSha: currentSha,
+    baseSha: prior.sha,
+    resolutions: new Set(),
+  });
+
+  const existing = await platform.listOpenIssues(LUME_REPO);
+  const titles = new Set((existing || []).map((issue) => issue?.title).filter(Boolean));
+  const findings = [...(result.blocking || []), ...(result.nonBlocking || [])];
+  let emitted = 0;
+  let eligible = 0;
+
+  for (const finding of findings) {
+    const { task } = buildLumeRemediationTask({ finding, baseSha: currentSha, policy });
+    if (!task) continue;
+    eligible += 1;
+    const issue = issueForLumeRemediationTask(task);
+    if (titles.has(issue.title)) continue;
+    await platform.createIssue(LUME_REPO, issue);
+    titles.add(issue.title);
+    emitted += 1;
+  }
+
+  state[key] = { sha: currentSha, previousSha: prior.sha, observedAt: new Date().toISOString() };
+  summary.maintainerEligible = (summary.maintainerEligible || 0) + eligible;
+  summary.maintainerTasks = (summary.maintainerTasks || 0) + emitted;
+  return { baseline: false, sha: currentSha, previousSha: prior.sha, eligible, emitted };
 }
 
 // Repo-managed widening of the env allowlist. SENTINEL_GITHUB_POLL_REPOS lives
@@ -140,12 +215,22 @@ export async function pollGitHubInstallationOnce({
     errors: [],
     extraPollRepos: extra.repos,
     extraPollReposReason: extra.reason,
+    maintainerEligible: 0,
+    maintainerTasks: 0,
   };
 
   for (const repoInfo of repositories) {
     const repo = repoInfo?.full_name;
     if (typeof repo !== "string" || !repo || !allowedRepo(repo, opts, extra.repos)) continue;
     summary.repositories += 1;
+
+    if (repo === LUME_REPO) {
+      try {
+        await scanLumeMainOnce({ platform, state, summary });
+      } catch (err) {
+        summary.errors.push(repo + ":main_maintainer:" + String(err?.message || err));
+      }
+    }
 
     let prs;
     try {
