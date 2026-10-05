@@ -1,0 +1,46 @@
+{
+  "apiVersion": "sentinel.aftergraph/v1alpha1",
+  "kind": "AutonomousMaintainerPolicy",
+  "metadata": {
+    "name": "lume-autonomous-maintainer"
+  },
+  "spec": {
+    "repo": "Aftergraph/Lume",
+    "enabled": true,
+    "allowedSeverities": [
+      "reliability",
+      "correctness",
+      "performance",
+      "style"
+    ],
+    "maxRisk": "medium",
+    "allowedPaths": [
+      "src/**",
+      "server/**",
+      "tests/**",
+      "tools/**",
+      "uiux/**",
+      "apps/**",
+      "docs/**"
+    ],
+    "protectedPaths": [
+      ".github/workflows/**",
+      "server/identity.js",
+      "server/authority/**",
+      "server/credentials/**",
+      "server/secrets/**",
+      "server/policy/**",
+      "compose.production.yaml",
+      "wrangler.jsonc"
+    ],
+    "requireExactHead": true,
+    "requireSentinelVerification": true,
+    "requireIndependentChecks": [
+      "CI",
+      "PR verify",
+      "Lume 100x qualification",
+      "Sentinel gate"
+    ],
+    "allowAutoMerge": true
+  }
+}
