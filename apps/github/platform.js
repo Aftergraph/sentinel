@@ -150,6 +150,13 @@ export function createPlatform({
       const data = await req(`/repos/${repo}/pulls?state=open&per_page=100`);
       return Array.isArray(data) ? data : [];
     },
+    getBranch: (repo, branch = 'main') => req(`/repos/${repo}/branches/${encodeURIComponent(branch)}`),
+    getCompareDiff: (repo, base, head) => req(`/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`, { accept: 'application/vnd.github.v3.diff' }),
+    listOpenIssues: async (repo) => {
+      const data = await req(`/repos/${repo}/issues?state=open&per_page=100`);
+      return Array.isArray(data) ? data.filter((item) => !item?.pull_request) : [];
+    },
+    createIssue: (repo, { title, body }) => req(`/repos/${repo}/issues`, { method: 'POST', body: { title, body } }),
     getPR: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`),
     getDiff: (repo, pr) => req(`/repos/${repo}/pulls/${pr}`, { accept: 'application/vnd.github.v3.diff' }),
     listComments: async (repo, pr) => {
