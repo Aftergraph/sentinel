@@ -441,7 +441,7 @@ function printHelp() {
 Usage:
   sentinel review --pr <n> [--repo owner/name] [--format human|json|sarif|gov] [--rule-pack ${SUPPORTED_PACKS.join('|')}] [--source ${SOURCE_ENUM.join('|')}] [--ledger-path <path>] [--no-ledger] [--config <path>] [--memory-path <path>]
   sentinel review --diff <file|-> [--repo owner/name] [--pr <n>] [--head-sha <sha>] [--base-sha <sha>] [same flags as above]
-  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>] [--org-store <p>] [--domain-verification-store <p>] [--domain-verifier-ref <id>] [--domain-observer-url <url>] [--domain-observer-ref <id>] [--domain-works-url <url>]
+  sentinel serve [--port 8787] [--host 127.0.0.1] [--repo a/b,c/d] [--token <bearer>] [--ledger-path <p>] [--memory-path <p>] [--config <p>] [--topology <p>] [--org-state <p>] [--evidence-store <p>] [--org-store <p>] [--domain-verification-store <p>] [--domain-verifier-ref <id>] [--capability-attestation-store <p>] [--domain-observer-url <url>] [--domain-observer-ref <id>] [--domain-works-url <url>]
   sentinel resolve --rule-id <id> --file <path> [--evidence <text>] [--head-sha <sha>] [--reason <text>] [--memory-path <path>]
   sentinel verify --receipt <path>
   sentinel review --diff <file|-> --repo a/b --policy <path> [--format human|json|sarif|gov]
@@ -521,6 +521,7 @@ try {
     'org-store': { type: 'string' },
     'domain-verification-store': { type: 'string' },
     'domain-verifier-ref': { type: 'string' },
+    'capability-attestation-store': { type: 'string' },
     'domain-observer-url': { type: 'string' },
     'domain-observer-ref': { type: 'string' },
     'domain-works-url': { type: 'string' },
@@ -635,6 +636,7 @@ try {
       console.error(`Error: cannot read org store file: ${orgStoreFlag}`);
       process.exit(1);
     }
+    const capabilityAttestationStore = values['capability-attestation-store'] || process.env.SENTINEL_CAPABILITY_ATTESTATION_STORE || undefined;
     const domainVerificationStore = values['domain-verification-store'] || process.env.SENTINEL_DOMAIN_VERIFICATION_STORE || undefined;
     const domainVerifierRef = values['domain-verifier-ref'] || process.env.SENTINEL_DOMAIN_VERIFIER_REF || undefined;
     if (Boolean(domainVerificationStore) !== Boolean(domainVerifierRef)) {
@@ -696,6 +698,7 @@ try {
       domainIndependentCheck,
       simplificationIndependentCheck,
       domainVerificationPublisher,
+      capabilityAttestationStorePath: capabilityAttestationStore,
     });
     const port = parseInt(values.port || '8787', 10);
     listenConsole(handler, { port, host });
