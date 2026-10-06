@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { createConsoleServer } from '../console/server.js';
+import { createCapabilityAttestationStore } from '../lib/capability-attestation-store.js';
 import { makeReceipt, appendLedger } from '../lib/receipt.js';
 import { RULE_PACK_VERSION, ruleIdsForPack } from '../lib/rulepack.js';
 
@@ -211,4 +212,160 @@ test('console: unknown api routes 404, shell serves when public exists', async (
     assert.ok((await page.text()).includes('Sentinel Console'));
     assert.equal((await c.raw('GET', '/does-not-exist-xyz')).status, 404);
   } finally { await c.close(); }
+});
+
+
+test('console: capability attestation query is authenticated, filtered and freshness-aware', async () => {
+  const c = await boot({
+    token: 'cap-token',
+    capabilityAttestationStorePath: undefined,
+  });
+  await c.close();
+
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-cap-query-'));
+  const storePath = join(dir, 'capability-attestations.json');
+  const store = createCapabilityAttestationStore(storePath);
+  store.put({
+    id: 'capatt_lenovo_computer',
+    nodeId: 'wrkr_jonas_lenovo',
+    capability: 'computer',
+    state: 'AVAILABLE',
+    observedAt: '2026-10-06T18:00:00.000Z',
+    verifiedAt: '2026-10-06T18:00:05.000Z',
+    freshnessTtlMs: 60_000,
+    source: 'sentinel:computer-probe',
+  });
+  store.put({
+    id: 'capatt_lenovo_local_device',
+    nodeId: 'wrkr_jonas_lenovo',
+    capability: 'local.device',
+    state: 'REVOKED',
+    observedAt: '2026-10-06T18:00:00.000Z',
+    verifiedAt: '2026-10-06T18:00:05.000Z',
+    freshnessTtlMs: 60_000,
+    source: 'sentinel:computer-probe',
+  });
+  store.put({
+    id: 'capatt_vds_browser',
+    nodeId: 'wrkr_vds_1',
+    capability: 'browser',
+    state: 'AVAILABLE',
+    observedAt: '2026-10-06T18:00:00.000Z',
+    verifiedAt: '2026-10-06T18:00:05.000Z',
+    freshnessTtlMs: 60_000,
+    source: 'sentinel:browser-probe',
+  });
+
+  const handler = createConsoleServer({
+    ledgerPath: join(dir, 'ledger.jsonl'),
+    memoryPath: join(dir, 'mem.jsonl'),
+    configPath: join(dir, 'sentinel.config.json'),
+    token: 'cap-token',
+    capabilityAttestationStorePath: storePath,
+    capabilityAttestationNow: () => Date.parse('2026-10-06T18:01:06.000Z'),
+  });
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (headers = {}, body = {}) => {
+    const res = await fetch(base + '/v1/capability-attestations/query', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json() };
+  };
+
+  try {
+    assert.equal((await call({}, {
+      schema: 'aftergraph.capability-attestation-query/1.0',
+      node_ids: ['wrkr_jonas_lenovo'],
+      capabilities: ['computer'],
+    })).status, 401);
+
+    const out = await call(
+      { authorization: 'Bearer cap-token' },
+      {
+        schema: 'aftergraph.capability-attestation-query/1.0',
+        node_ids: ['wrkr_jonas_lenovo', 'wrkr_missing'],
+        capabilities: ['local.device', 'computer'],
+      },
+    );
+    assert.equal(out.status, 200);
+    assert.equal(out.json.schema, 'aftergraph.capability-attestations/1.0');
+    assert.deepEqual(
+      out.json.attestations.map((item) => [item.id, item.state]),
+      [
+        ['capatt_lenovo_computer', 'STALE'],
+        ['capatt_lenovo_local_device', 'REVOKED'],
+      ],
+    );
+    assert.equal(JSON.stringify(out.json).includes('wrkr_vds_1'), false);
+
+    const bad = await call(
+      { authorization: 'Bearer cap-token' },
+      {
+        schema: 'aftergraph.capability-attestation-query/1.0',
+        node_ids: [],
+        capabilities: ['computer'],
+      },
+    );
+    assert.equal(bad.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('console: capability attestation query fails closed when service is unconfigured', async () => {
+  const c = await boot({ token: 'cap-token' });
+  try {
+    const out = await c.call(
+      'POST',
+      '/v1/capability-attestations/query',
+      {
+        schema: 'aftergraph.capability-attestation-query/1.0',
+        node_ids: ['wrkr_jonas_lenovo'],
+        capabilities: ['computer'],
+      },
+      { authorization: 'Bearer cap-token' },
+    );
+    assert.equal(out.status, 503);
+    assert.equal(out.json.error, 'capability attestation store unavailable');
+  } finally {
+    await c.close();
+  }
+});
+
+test('console: capability attestation query requires a configured service token', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sentinel-cap-query-no-token-'));
+  const storePath = join(dir, 'capability-attestations.json');
+  createCapabilityAttestationStore(storePath);
+  const handler = createConsoleServer({
+    ledgerPath: join(dir, 'ledger.jsonl'),
+    memoryPath: join(dir, 'mem.jsonl'),
+    configPath: join(dir, 'sentinel.config.json'),
+    capabilityAttestationStorePath: storePath,
+  });
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${server.address().port}/v1/capability-attestations/query`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          schema: 'aftergraph.capability-attestation-query/1.0',
+          node_ids: ['wrkr_jonas_lenovo'],
+          capabilities: ['computer'],
+        }),
+      },
+    );
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), { error: 'capability attestation service unavailable' });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
