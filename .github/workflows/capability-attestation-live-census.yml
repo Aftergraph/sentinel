@@ -1,0 +1,70 @@
+name: Capability attestation live census
+
+on:
+  push:
+    branches:
+      - proof/capability-attestation-live-census
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: [self-hosted, Linux, X64, aftergraph-ci]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Verify production Sentinel runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${RUNNER_NAME:-}" = "vds-aftergraph-ci-sentinel"
+          test "$(hostname -s)" = "vmi3517816"
+          test "$(id -un)" = "agci"
+          sudo -n /usr/local/sbin/sentinel-deploy preflight
+
+      - name: Capture sanitized deployment facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          {
+            echo "revision=$(sudo -n /usr/local/sbin/sentinel-deploy revision)"
+            echo "port=$(sudo -n /usr/local/sbin/sentinel-deploy port)"
+            echo "github_app_env_keys:"
+            sudo -n awk -F= '/^[A-Z][A-Z0-9_]*=/{print $1}' /etc/sentinel/github-app.env | sort -u | sed 's/^/  - /'
+            echo "sentinel_units:"
+            systemctl list-units --type=service --state=running --no-legend --no-pager |
+              awk '{print $1}' | grep -E '^sentinel-' | sort | sed 's/^/  - /' || true
+            echo "listeners:"
+            sudo -n ss -ltnpH 2>/dev/null |
+              grep -E ':(8787|8788|8790|8791|8800)([[:space:]]|$)' |
+              sed -E 's/users:.*/users:[redacted]/' || true
+            echo "capability_store_paths:"
+            for p in /var/lib/sentinel/capability-attestations.json /var/lib/sentinel/capabilities.json /opt/sentinel/data/capability-attestations.json; do
+              if sudo -n test -e "$p"; then
+                printf '  - %s type=' "$p"
+                sudo -n stat -c '%F' "$p"
+              fi
+            done
+          } | tee artifacts/sentinel-live-census.txt
+
+      - name: Fingerprint capability query without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="$(sudo -n /usr/local/sbin/sentinel-deploy port)"
+          port="${port:-8787}"
+          code="$(curl -sS --noproxy '*' --resolve "sentinel-loopback.invalid:${port}:127.0.0.1"             -o /dev/null -w '%{http_code}' --max-time 2 -X POST             -H 'content-type: application/json' --data '{}'             "http://sentinel-loopback.invalid:${port}/v1/capability-attestations/query" || true)"
+          printf '{"port":%s,"unauthenticated_capability_query_http":%s}\n' "$port" "${code:-0}" |
+            tee artifacts/capability-query-fingerprint.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: sentinel-capability-attestation-live-census
+          path: artifacts/
+          retention-days: 30
