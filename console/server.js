@@ -40,6 +40,7 @@ import {
 import { createOrgStore } from '../lib/org-store.js';
 import { createEvidenceStore } from '../lib/evidence-store.js';
 import { createDomainVerificationStore } from '../lib/domain-verification-store.js';
+import { createCapabilityAttestationStore } from '../lib/capability-attestation-store.js';
 import { verifyDomainEvidence } from '../lib/domain-verification.js';
 import { verifySimplificationEvidence } from '../lib/simplification-verification.js';
 import { adaptSimplificationProducerClaim } from '../lib/simplification-producer-claim.js';
@@ -259,7 +260,7 @@ function listNamedEntries(doc) {
 }
 
 export function createConsoleServer(opts = {}) {
-  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, domainIndependentCheck, simplificationIndependentCheck, domainVerifierRef, domainVerificationPublisher, rateLimit, noExemptLoopback, logStream } = opts;
+  const { ledgerPath, memoryPath, configPath, token, repos, platform, noLedger, topologyPath, orgStatePath, orgStorePath, evidenceStorePath, domainVerificationStorePath, capabilityAttestationStorePath, capabilityAttestationNow, domainIndependentCheck, simplificationIndependentCheck, domainVerifierRef, domainVerificationPublisher, rateLimit, noExemptLoopback, logStream } = opts;
   // Trace sink for the one-structured-line-per-request log; injectable
   // for tests, defaults to process.stderr in production.
   const traceLog = logStream ?? process.stderr;
@@ -276,6 +277,14 @@ export function createConsoleServer(opts = {}) {
   // v1b mode only when governance files are pointed at; otherwise the
   // v1a /api/repos shape is returned byte-identically (no headSource).
   const orgWide = Boolean(topologyPath || orgStatePath);
+  const capabilityAttestationStore =
+    typeof capabilityAttestationStorePath === 'string' && capabilityAttestationStorePath.trim()
+      ? createCapabilityAttestationStore(capabilityAttestationStorePath)
+      : null;
+  const capabilityNow =
+    typeof capabilityAttestationNow === 'function'
+      ? capabilityAttestationNow
+      : () => Date.now();
 
   function activePack() {
     try {
@@ -1580,8 +1589,10 @@ export function createConsoleServer(opts = {}) {
       // (including failed-auth, so unauthenticated floods still consume
       // the IP's budget), while the 401 takes precedence over the 429 so
       // the gate's behavior is unchanged under load.
+      const capabilityAttestationQuery =
+        path === '/v1/capability-attestations/query';
       let rateInfo = null;
-      if (path.startsWith('/api/') && path !== '/api/healthz') {
+      if ((path.startsWith('/api/') && path !== '/api/healthz') || capabilityAttestationQuery) {
         const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
         if (!(exemptLoopback && isLoopbackIp(ip))) {
           rateInfo = limiter.check(ip);
@@ -1589,6 +1600,14 @@ export function createConsoleServer(opts = {}) {
       }
 
       if (token && path.startsWith('/api/') && path !== '/api/healthz') {
+        if (req.headers.authorization !== `Bearer ${token}`) {
+          throw new HttpError(401, 'unauthorized');
+        }
+      }
+      if (capabilityAttestationQuery) {
+        if (typeof token !== 'string' || token.length === 0) {
+          throw new HttpError(503, 'capability attestation service unavailable');
+        }
         if (req.headers.authorization !== `Bearer ${token}`) {
           throw new HttpError(401, 'unauthorized');
         }
@@ -1606,6 +1625,38 @@ export function createConsoleServer(opts = {}) {
 
       if (method === 'GET' && path === '/api/healthz') {
         return send(200, { ok: true, version: VERSION, pack: RULE_PACK_VERSION });
+      }
+      if (method === 'POST' && capabilityAttestationQuery) {
+        if (!capabilityAttestationStore) {
+          throw new HttpError(503, 'capability attestation store unavailable');
+        }
+        const body = await readJson(req);
+        if (
+          !body ||
+          typeof body !== 'object' ||
+          Array.isArray(body) ||
+          body.schema !== 'aftergraph.capability-attestation-query/1.0' ||
+          !Array.isArray(body.node_ids) ||
+          !Array.isArray(body.capabilities) ||
+          body.node_ids.length === 0 ||
+          body.capabilities.length === 0 ||
+          body.node_ids.length > 256 ||
+          body.capabilities.length > 256 ||
+          body.node_ids.some((value) => typeof value !== 'string' || value.trim() === '') ||
+          body.capabilities.some((value) => typeof value !== 'string' || value.trim() === '')
+        ) {
+          throw new HttpError(400, 'invalid capability attestation query');
+        }
+        const nodeIds = [...new Set(body.node_ids.map((value) => value.trim()))].sort();
+        const capabilities = [...new Set(body.capabilities.map((value) => value.trim()))].sort();
+        return send(200, {
+          schema: 'aftergraph.capability-attestations/1.0',
+          attestations: capabilityAttestationStore.query({
+            nodeIds,
+            capabilities,
+            nowMs: capabilityNow(),
+          }),
+        });
       }
       if (method === 'GET' && path === '/api/repos') {
         const scope = resolveOrgQuery(url.searchParams.get('org'));
