@@ -24,6 +24,24 @@ case "${verb}" in
     [[ $# -eq 0 ]] || die "preflight takes no arguments"
     echo ok
     ;;
+  env-preflight)
+    [[ $# -eq 0 ]] || die "env-preflight takes no arguments"
+    # Fail closed before install/restart. Prints only port and auth kind, never values.
+    [[ -r "${ENV_FILE}" ]] || die "${ENV_FILE} missing"
+    envget() { awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { print v }' "${ENV_FILE}" | tr -d '[:space:]'; }
+    port="$(envget PORT)"
+    [[ "${port}" =~ ^[0-9]+$ ]] || die "PORT is not set in ${ENV_FILE}"
+    app_id="$(envget GITHUB_APP_ID)"; key_file="$(envget GITHUB_APP_KEY_FILE)"
+    if [[ -n "${app_id}" && -n "${key_file}" ]]; then
+      [[ -s "${key_file}" ]] || die "GITHUB_APP_KEY_FILE is missing or empty"
+      auth=app
+    elif [[ -n "$(envget GITHUB_TOKEN)" ]]; then
+      auth=token
+    else
+      die "no GitHub auth configured in ${ENV_FILE}"
+    fi
+    echo "port=${port} auth=${auth}"
+    ;;
   install)
     [[ $# -eq 2 ]] || die "usage: install <checkout-dir> <40-hex-sha>"
     src="$(realpath -e -- "$1")"; sha="$2"
@@ -183,6 +201,6 @@ NGX
       | grep -v 'sentinel github poll ' | tail -n 20 || true
     ;;
   *)
-    die "unknown verb '${verb}' (preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|ingress-enable|host-facts|diagnose)"
+    die "unknown verb '${verb}' (preflight|env-preflight|install|restart|revision|port|hashes|webhook-check|webhook-rotate|ingress-enable|host-facts|diagnose)"
     ;;
 esac
