@@ -1,0 +1,34 @@
+name: Native Sentinel PR review
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  review:
+    name: sentinel/review
+    runs-on: [self-hosted, linux, x64, aftergraph-ci]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Sentinel runtime
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Aftergraph/sentinel
+          ref: main
+          path: .aftergraph/sentinel
+          persist-credentials: false
+
+      - name: Review exact pull-request HEAD
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          node .aftergraph/sentinel/bin/sentinel.js review \
+            --pr "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --format json
