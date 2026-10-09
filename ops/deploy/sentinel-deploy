@@ -103,6 +103,11 @@ case "${verb}" in
     # Same as certbot below: ingress-enable owns its own dependency, so a fresh
     # VDS does not fail the deploy with "nginx is not installed".
     if ! command -v nginx >/dev/null 2>&1; then
+      # Never install a second web server onto ports another one already owns
+      # (this VDS runs Caddy on 80/443): fail closed and say so instead.
+      if ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)(80|443)$'; then
+        die "ports 80/443 are already served by another web server (caddy=$(command -v caddy >/dev/null 2>&1 && echo yes || echo no)); route the webhook through it instead of nginx"
+      fi
       DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null || die "apt-get update failed while installing nginx"
       DEBIAN_FRONTEND=noninteractive apt-get install -y -q nginx >/dev/null || die "nginx is missing and could not be installed"
       command -v nginx >/dev/null 2>&1 || die "nginx is not installed"
