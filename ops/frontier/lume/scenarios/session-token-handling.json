@@ -1,0 +1,25 @@
+{
+  "id": "session-token-handling",
+  "risk_class": "session-token-handling",
+  "description": "Client session tokens must not leak into upstream request state echoed back to the client, and must be scoped to their original request.",
+  "probe": {
+    "method": "POST",
+    "path": "/v1/chat",
+    "headers": { "x-lume-session": "sess-frontier-fixture-77" },
+    "body": { "messages": [{ "role": "user", "content": "hi" }] }
+  },
+  "upstream_replay": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "extra_headers": { "x-upstream-secret": "sk-live-9f1e2" },
+    "body_chunks": ["data: {\"delta\":\"hi\"}\n\n", "\n"]
+  },
+  "expect": {
+    "no_forbidden_patterns_in_response": [
+      "sk-live-9f1e2",
+      "x-upstream-secret",
+      "sess-frontier-fixture-77"
+    ],
+    "content_type_matches": ["text/event-stream", "application/json"]
+  }
+}
