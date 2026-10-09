@@ -100,7 +100,14 @@ case "${verb}" in
     [[ $# -eq 1 ]] || die "usage: ingress-enable <name>.aftergraph.org"
     host="$1"
     [[ "${host}" =~ ^[a-z0-9-]+\.aftergraph\.org$ ]] || die "host must be <name>.aftergraph.org"
-    command -v nginx >/dev/null 2>&1 || die "nginx is not installed"
+    # Same as certbot below: ingress-enable owns its own dependency, so a fresh
+    # VDS does not fail the deploy with "nginx is not installed".
+    if ! command -v nginx >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null || die "apt-get update failed while installing nginx"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -q nginx >/dev/null || die "nginx is missing and could not be installed"
+      command -v nginx >/dev/null 2>&1 || die "nginx is not installed"
+      systemctl enable --now nginx >/dev/null 2>&1 || die "nginx was installed but could not be started"
+    fi
     port="$(awk -F= '$1=="PORT" {print $2}' "${ENV_FILE}" | tail -n 1 | tr -d '[:space:]')"; port="${port:-8787}"
     [[ "${port}" =~ ^[0-9]+$ ]] || die "PORT in ${ENV_FILE} is not numeric"
     # DNS must already point here, or Let's Encrypt cannot validate.
