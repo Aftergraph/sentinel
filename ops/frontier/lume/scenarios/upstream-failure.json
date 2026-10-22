@@ -1,0 +1,20 @@
+{
+  "id": "upstream-failure",
+  "risk_class": "upstream-failure",
+  "description": "Upstream 5xx must surface as an explicit error, never an empty 200 stream.",
+  "probe": {
+    "method": "POST",
+    "path": "/v1/chat",
+    "body": { "messages": [{ "role": "user", "content": "hi" }] }
+  },
+  "upstream_replay": {
+    "status": 503,
+    "headers": { "content-type": "application/json" },
+    "body_chunks": ["{\"error\":\"upstream capacity\"}"],
+    "extra_headers": { "x-upstream-secret": "sk-live-9f1e2" }
+  },
+  "expect": {
+    "not_status": [200],
+    "no_forbidden_patterns_in_response": ["sk-live-9f1e2", "x-upstream-secret"]
+  }
+}

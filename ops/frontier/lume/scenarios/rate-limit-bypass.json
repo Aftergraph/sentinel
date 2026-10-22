@@ -1,0 +1,20 @@
+{
+  "id": "rate-limit-bypass",
+  "risk_class": "rate-limit-bypass",
+  "description": "Request without a valid session identifier must not receive unlimited/free access; anonymous requests must be bounded.",
+  "probe": {
+    "method": "POST",
+    "path": "/v1/chat",
+    "headers": { "x-lume-session": "anonymous" },
+    "body": { "messages": [{ "role": "user", "content": "hi" }] }
+  },
+  "upstream_replay": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "body_chunks": ["data: {\"delta\":\"hi\"}\n\n", "\n"]
+  },
+  "expect": {
+    "response_is_sse_or_error": true,
+    "no_forbidden_patterns_in_response": ["x-upstream-secret", "sk-live-9f1e2"]
+  }
+}
